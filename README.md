@@ -1,39 +1,59 @@
-Below is the full Python script to generate an SBOM in CycloneDX format, leveraging your logic about using the PURL (`referenceLocator`) for constructing fields like `bom-ref` and `name`:
+Certainly! Let's incorporate the provided logic into the script to ensure that the components are correctly populated based on the `referenceLocator`. The following full script includes your suggested method for extracting components from the `dependencies` data:
+
+### Full Script with Component Extraction
 
 ```python
+import requests
 import json
-import pytz
-from datetime import datetime
+import os
 import logging
+from github import Github
+from github import GithubException
+from datetime import datetime
+import pytz
+import re
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def get_dependencies(owner, repo, access_token):
+    logging.info(f"Fetching dependencies for repo: {owner}/{repo}")
+    url = f"https://api.github.com/repos/{owner}/{repo}/dependency-graph/sbom"
+    headers = {
+        "Authorization": f"token {access_token}",
+        "Accept": "application/vnd.github+json"
+    }
+    response = requests.get(url, headers=headers)
+    logging.info(f"GitHub API response status: {response.status_code}")
+    response.raise_for_status()
+    logging.info("Successfully fetched dependencies.")
+    return response.json()
+
+def get_latest_release_version(repo):
+    try:
+        latest_release = repo.get_latest_release()
+        version = latest_release.tag_name
+        return version[1:] if version.startswith('v') else version
+    except GithubException:
+        logging.warning(f"No releases found for {repo.full_name}")
+        return None
+
+def clean_version(version):
+    return re.sub(r'^[^0-9]*', '', version) if version else "unknown"
 
 def generate_sbom(dependencies, owner, repo, repo_version):
-    """
-    Generates a CycloneDX SBOM from the given dependencies.
-
-    Args:
-        dependencies (dict): The JSON response containing the SBOM data.
-        owner (str): The owner of the repository.
-        repo (str): The name of the repository.
-        repo_version (str): The version of the repository.
-
-    Returns:
-        dict: The generated SBOM data in CycloneDX format.
-    """
     logging.info(f"Generating SBOM for {owner}/{repo}")
-    
-    # Metadata for the repository itself
+
     repo_name = f"{owner}/{repo}"
+    
     metadata_component = {
-        "bom-ref": f"pkg:repository/{repo_name}@{repo_version}",
+        "bom-ref": f"pkg:TRAINPACKAGE/{repo_name}",
         "type": "application",
         "name": repo_name,
         "version": repo_version,
-        "purl": f"pkg:repository/{repo_name}@{repo_version}"
+        "purl": f"pkg:TRAINPACKAGE/{repo_name}@{repo_version}"
     }
-    
+
     # Components section
     components = []
     for package in dependencies.get('sbom', {}).get('packages', []):
@@ -55,15 +75,13 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             "bom-ref": bom_ref,
             "type": "library",
             "name": name,
-            "version": package.get('versionInfo', ''),
+            "version": package.get('versionInfo', 'unknown'),  # Default to 'unknown' if no version info is available
             "purl": purl
         })
 
-    # Generate timestamp in ISO format
     eastern = pytz.timezone('US/Eastern')
     timestamp = datetime.now(eastern).isoformat(timespec='seconds')
 
-    # Complete SBOM structure
     sbom_data = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -77,118 +95,68 @@ def generate_sbom(dependencies, owner, repo, repo_version):
 
     return sbom_data
 
-
-def save_sbom_to_file(sbom_data, output_file):
-    """
-    Saves the generated SBOM data to a JSON file.
-
-    Args:
-        sbom_data (dict): The SBOM data to save.
-        output_file (str): Path to the output file.
-    """
+def save_sbom_to_file(sbom_data, filename):
     try:
-        with open(output_file, "w", encoding="utf-8") as file:
-            json.dump(sbom_data, file, indent=4)
-        logging.info(f"SBOM saved to {output_file}")
+        with open(filename, 'w') as f:
+            json.dump(sbom_data, f, indent=2)
+        logging.info(f"SBOM exported successfully to {filename}")
     except Exception as e:
-        logging.error(f"Failed to save SBOM: {e}")
+        logging.exception(f"Error saving SBOM to {filename}")
 
+def process_single_repo(owner, repo_name, access_token, output_base):
+    g = Github(access_token)
+
+    try:
+        repo = g.get_repo(f"{owner}/{repo_name}")
+        logging.info(f"Processing repository: {repo.full_name}")
+
+        os.makedirs(output_base, exist_ok=True)
+
+        repo_version = get_latest_release_version(repo)
+
+        if repo_version:
+            dependencies = get_dependencies(owner, repo.name, access_token)
+            sbom_data = generate_sbom(dependencies, owner, repo.name, repo_version)
+            output_file = os.path.join(output_base, f"{repo.name}.json")
+            save_sbom_to_file(sbom_data, output_file)
+        else:
+            logging.info(f"No releases found for {repo.name}, using 'unknown' as version")
+            dependencies = get_dependencies(owner, repo.name, access_token)
+            sbom_data = generate_sbom(dependencies, owner, repo.name, "unknown")
+            output_file = os.path.join(output_base, f"{repo.name}.json")
+            save_sbom_to_file(sbom_data, output_file)
+
+    except requests.exceptions.HTTPError as http_err:
+        logging.error(f"HTTP error occurred for {repo.name}: {http_err}")
+    except Exception as err:
+        logging.error(f"An error occurred for {repo.name}: {err}")
 
 if __name__ == "__main__":
-    # Example input data
-    example_dependencies = {
-        "sbom": {
-            "packages": [
-                {
-                    "referenceLocator": "pkg:pypi/datadog@0.44.0",
-                    "versionInfo": "0.44.0"
-                },
-                {
-                    "referenceLocator": "pkg:npm/react@17.0.2",
-                    "versionInfo": "17.0.2"
-                },
-                {
-                    "referenceLocator": "pkg:maven/org.apache.commons/commons-lang3@3.12.0",
-                    "versionInfo": "3.12.0"
-                }
-            ]
-        }
-    }
+    # Replace these values with your actual GitHub repository details and access token
+    owner = "Eaton-Vance-Corp"
+    repo_name = "your-repo-name"
+    access_token = "your-github-access-token"
+    output_base = r"c:\sre\sbom"
 
-    # Set owner, repo, and version
-    owner = "example_owner"
-    repo = "example_repo"
-    repo_version = "1.0.0"
-
-    # Generate the SBOM
-    sbom = generate_sbom(example_dependencies, owner, repo, repo_version)
-
-    # Save the SBOM to a file
-    output_file = "sbom_example.json"
-    save_sbom_to_file(sbom, output_file)
+    process_single_repo(owner, repo_name, access_token, output_base)
 ```
 
-### Features of the Script:
-1. **Metadata Construction:**
-   - Includes repository-level metadata like `bom-ref`, `name`, and `purl`.
+### Key Features of This Script:
 
-2. **Dynamic Component Handling:**
-   - Processes the `referenceLocator` to populate `bom-ref`, `name`, and `purl` fields dynamically.
-   - Skips packages without a valid `referenceLocator` and logs a warning.
+1. **Dependency Fetching**: It fetches dependency information from the GitHub API using the dependency graph endpoint.
 
-3. **Timestamp Generation:**
-   - Adds a timestamp in ISO 8601 format.
+2. **Component Extraction**: The script extracts components from the `dependencies` object based on the `referenceLocator`, constructing `purl`, `bom-ref`, and `name` directly from it.
 
-4. **File Output:**
-   - Saves the SBOM in a human-readable JSON format.
+3. **SBOM Generation**: The `generate_sbom` function constructs the SBOM with appropriate fields including `bom-ref`, `name`, and `purl`.
 
-5. **Example Data:**
-   - Includes a sample dependency list to test the script.
+4. **File Output**: The SBOM is saved to a specified JSON file.
 
----
+5. **Error Handling**: The script includes error handling to manage issues during API calls or file operations.
 
-### Example Output (JSON):
-For the given example dependencies, the SBOM will look like this:
+### Usage Instructions:
 
-```json
-{
-    "bomFormat": "CycloneDX",
-    "specVersion": "1.5",
-    "version": 1,
-    "metadata": {
-        "timestamp": "2024-11-26T10:00:00-05:00",
-        "component": {
-            "bom-ref": "pkg:repository/example_owner/example_repo@1.0.0",
-            "type": "application",
-            "name": "example_owner/example_repo",
-            "version": "1.0.0",
-            "purl": "pkg:repository/example_owner/example_repo@1.0.0"
-        }
-    },
-    "components": [
-        {
-            "bom-ref": "pkg-pypi-datadog-0.44.0",
-            "type": "library",
-            "name": "pypi:datadog",
-            "version": "0.44.0",
-            "purl": "pkg:pypi/datadog@0.44.0"
-        },
-        {
-            "bom-ref": "pkg-npm-react-17.0.2",
-            "type": "library",
-            "name": "npm:react",
-            "version": "17.0.2",
-            "purl": "pkg:npm/react@17.0.2"
-        },
-        {
-            "bom-ref": "pkg-maven-org.apache.commons-commons-lang3-3.12.0",
-            "type": "library",
-            "name": "maven:org.apache.commons:commons-lang3",
-            "version": "3.12.0",
-            "purl": "pkg:maven/org.apache.commons/commons-lang3@3.12.0"
-        }
-    ]
-}
-```
+- Replace `"your-repo-name"` with the actual name of your GitHub repository.
+- Replace `"your-github-access-token"` with a valid GitHub access token that has permissions to access the repository and its dependency graph.
+- Adjust the `output_base` path as needed.
 
-Let me know if you have additional requirements!
+This updated script should now correctly populate the components in the SBOM based on the logic you've provided. If you encounter any further issues or have specific requirements you'd like to implement, feel free to ask!
