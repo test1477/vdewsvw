@@ -1,8 +1,8 @@
-To update the script to generate a more comprehensive Software Bill of Materials (SBOM) that includes all relevant data, we will need to enhance the `generate_sbom` function. This enhancement will ensure that we capture additional details from the dependencies and format them appropriately in the SBOM.
+It seems that the search results do not contain any useful content or relevant information regarding your query about getting SBOM details for a single repository. However, I can provide you with a Python script that focuses on generating an SBOM for a single repository, including the EON_ID and checking for Angular 12 usage.
 
-### Updated SBOM Generation Script
+### Single Repository SBOM Generation Script
 
-Here’s how you can modify the existing script to include all relevant data in the generated SBOM:
+Here’s a complete script that generates an SBOM for a specified repository, retrieves the EON_ID, and checks if Angular 12 is being used:
 
 ```python
 import requests
@@ -11,10 +11,8 @@ import os
 import logging
 from github import Github
 from github import GithubException
-from datetime import datetime
 import pytz
 import re
-import csv
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -67,7 +65,7 @@ def generate_sbom(dependencies, owner, repo):
     Generates a comprehensive CycloneDX SBOM from the given dependencies.
     """
     logging.info(f"Generating comprehensive SBOM for {owner}/{repo}")
-    
+
     sbom_data = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -78,7 +76,7 @@ def generate_sbom(dependencies, owner, repo):
                 "bom-ref": f"pkg:TRAINPACKAGE/{owner}/{repo}",
                 "type": "application",
                 "name": f"{owner}/{repo}",
-                "version": get_latest_release_version(repo),
+                "version": get_latest_release_version(repo),  # You can implement this function similarly to before
                 "purl": f"pkg:TRAINPACKAGE/{owner}/{repo}@{get_latest_release_version(repo)}"
             }
         },
@@ -99,77 +97,73 @@ def generate_sbom(dependencies, owner, repo):
 
     return sbom_data
 
-def process_organization(org_name, access_token, output_file):
-    g = Github(access_token)
-    
-    try:
-        org = g.get_organization(org_name)
-        logging.info(f"Successfully accessed organization: {org_name}")
-        
-        with open(output_file, 'w', newline='') as csvfile:
-            csvwriter = csv.writer(csvfile)
-            csvwriter.writerow(['Repository Name', ID_PROPERTY_NAME, 'Uses Angular 12'])
-        
-            for repo in org.get_repos():
-                if repo.archived:
-                    logging.info(f"Skipping archived repository: {repo.full_name}")
-                    continue
+def main():
+    # Set up environment variables or hardcode values here
+    org_name = os.environ.get('GITHUB_ORG_NAME')
+    repo_name = os.environ.get('GITHUB_REPO_NAME')  # Specify the repository name here
+    access_token = os.environ.get('GITHUB_TOKEN')
 
-                logging.info(f"Processing repository: {repo.full_name}")
-                try:
-                    eon_id = get_repo_id(org_name, repo.name, access_token)
-                    dependencies = get_dependencies(org_name, repo.name, access_token)
-                    sbom_data = generate_sbom(dependencies, org_name, repo.name)
-                    uses_angular_12 = check_angular_12(dependencies)
-                    
-                    csvwriter.writerow([repo.name, eon_id, uses_angular_12])
-                    
-                    if uses_angular_12:
-                        logging.info(f"Repository {repo.name} uses Angular 12")
-                except requests.exceptions.HTTPError as http_err:
-                    logging.error(f"HTTP error occurred for {repo.name}: {http_err}")
-                except Exception as err:
-                    logging.error(f"An error occurred for {repo.name}: {err}")
-    
-    except GithubException as e:
-        logging.exception(f"Error accessing organization {org_name}")
-    except Exception as e:
-        logging.exception("Error processing organization")
+    try:
+        dependencies = get_dependencies(org_name, repo_name, access_token)
+        eon_id = get_repo_id(org_name, repo_name, access_token)
+        sbom_data = generate_sbom(dependencies, org_name, repo_name)
+        
+        # Output the SBOM data to a JSON file
+        output_file = f"{repo_name}_sbom.json"
+        with open(output_file, 'w') as f:
+            json.dump(sbom_data, f, indent=2)
+        
+        logging.info(f"SBOM generated successfully and saved to {output_file}")
+        
+        # Log the EON_ID value
+        logging.info(f"EON_ID for {repo_name}: {eon_id}")
+        
+        # Check if Angular 12 is used
+        uses_angular_12 = check_angular_12(dependencies)
+        logging.info(f"Does the repository use Angular 12? {'Yes' if uses_angular_12 else 'No'}")
+
+    except requests.exceptions.HTTPError as http_err:
+        logging.error(f"HTTP error occurred: {http_err}")
+    except Exception as err:
+        logging.error(f"An error occurred: {err}")
 
 if __name__ == "__main__":
-    org_name = os.environ.get('GITHUB_ORG_NAME')
-    access_token = os.environ.get('GITHUB_TOKEN')
-    output_file = 'github_report.csv'
-    
-    process_organization(org_name, access_token, output_file)
+    main()
 ```
 
-### Key Updates in This Script:
+### Key Features of This Script:
 
-1. **Comprehensive SBOM Generation**:
-   - The `generate_sbom` function now constructs a detailed SBOM that includes all packages and their respective details (like name, version info, and PURL).
-   - The metadata component includes the repository name and version derived from the latest release.
+1. **Fetch Dependencies**: 
+   - Uses GitHub's dependency graph API to fetch the SBOM of the specified repository.
 
-2. **Enhanced Dependency Handling**:
-   - Each package fetched from the dependency graph is added to the SBOM's components list with all relevant information.
+2. **Retrieve EON_ID**: 
+   - Fetches the EON_ID value from custom properties of the repository.
 
-3. **CSV Report Generation**:
-   - The script continues to generate a CSV report that includes repository names, EON_ID values from custom properties, and whether Angular 12 is used.
+3. **Check for Angular 12 Usage**: 
+   - Checks if the Angular framework version 12 is being used by examining the dependencies.
+
+4. **Generate Comprehensive SBOM**: 
+   - Constructs a CycloneDX-compliant SBOM that includes all packages and their details.
+
+5. **Logging**: 
+   - Provides detailed logs throughout the process for easier debugging and tracking.
+
+6. **Output**: 
+   - Saves the generated SBOM as a JSON file named after the repository (e.g., `repo_name_sbom.json`).
 
 ### Usage Instructions:
 
 1. **Set Environment Variables**:
    - `GITHUB_ORG_NAME`: Your GitHub organization name.
+   - `GITHUB_REPO_NAME`: The name of the specific repository you want to analyze.
    - `GITHUB_TOKEN`: Your GitHub personal access token with necessary permissions.
 
 2. **Run the Script**:
-   - Execute the script in your Python environment. It will generate a file named `github_report.csv` containing the report and will also create a comprehensive SBOM for each repository processed.
+   - Execute the script in your Python environment. It will generate an SBOM file and log relevant information about EON_ID and Angular usage.
 
-3. **Review Output**:
-   - Check the generated CSV file for repository details and whether they use Angular 12.
-   - The SBOM can be further processed or uploaded as needed.
+### Conclusion:
 
-This updated script will provide you with a complete view of your organization's repositories along with their dependency details in a structured format.
+This script allows you to focus on a single repository and gather comprehensive information about its dependencies while also checking for specific frameworks like Angular 12. It can be easily integrated into larger workflows or run independently as needed.
 
 Citations:
 [1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/11902716/6c18de5e-e231-414b-a391-fd96ab507e14/paste.txt
