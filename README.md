@@ -1,6 +1,6 @@
-To ensure GitHub Actions workflow components (such as those prefixed with `githubactions/` and `github/`) are completely excluded from the output, we need to ensure that the exclusion logic is applied properly when processing each package. Specifically, we should check if the package name contains any of the patterns like `githubactions/`, `actions/`, or `github/` before including it in the CycloneDX SBOM.
+Got it! I understand now that you want to exclude GitHub Actions components from the CycloneDX SBOM output based on the package name and the `bom-ref` field. Specifically, you want to check if the package name contains specific terms like `"pkg:actions"`, `"actions:"`, or references to GitHub Actions packages and repositories, and exclude them from the output.
 
-Let's adjust the exclusion logic to make sure it's applied properly. The exclusion should be applied inside the loop where packages are processed, before they are added to the `components` list.
+Let's adjust the script to implement this exclusion in the right places. We'll handle both the `bom-ref` field and the `name` field for excluding GitHub Actions components.
 
 ### Updated Script:
 
@@ -69,7 +69,7 @@ def convert_spdx_to_cyclonedx(spdx_data):
     components = []
     for package in spdx_doc.get('packages', []):
         package_name = package.get('name')
-        
+
         # Exclude GitHub Actions, GitHubActions, and github packages by name
         if any(exclusion in package_name.lower() for exclusion in ['actions/', 'githubactions/', 'github/']):
             logging.info(f"Excluding GitHub Action package: {package_name}")
@@ -95,6 +95,11 @@ def convert_spdx_to_cyclonedx(spdx_data):
         else:
             bom_ref = reference_locator.replace('/', '-').replace('@', '-')
             purl = reference_locator
+
+        # Skip components related to GitHub Actions based on bom-ref or package name
+        if "pkg:actions" in bom_ref.lower() or "actions:" in package['name'].lower():
+            logging.info(f"Skipping GitHub Action component: {package_name}")
+            continue
 
         components.append({
             "bom-ref": bom_ref,
@@ -159,25 +164,29 @@ if __name__ == "__main__":
         logging.error(f"Failed to fetch SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
 ```
 
-### Key Update:
-- **Exclusion of GitHub Actions Components**: The exclusion logic now specifically checks if the package name contains `actions/`, `githubactions/`, or `github/`, and **logs a message** when a package is excluded. It uses `.lower()` on the package name to ensure the exclusion is case-insensitive.
-  
+### Key Updates:
+1. **Exclusion based on `bom-ref` and `package_name`:** 
+   - The script now checks if `"pkg:actions"` exists in the `bom-ref` field or if `"actions:"` is found in the `name` field of the package.
+   - If these conditions are met, the package is skipped and will not be added to the `components` list.
+
    ```python
-   if any(exclusion in package_name.lower() for exclusion in ['actions/', 'githubactions/', 'github/']):
-       logging.info(f"Excluding GitHub Action package: {package_name}")
+   if "pkg:actions" in bom_ref.lower() or "actions:" in package['name'].lower():
+       logging.info(f"Skipping GitHub Action component: {package_name}")
        continue
    ```
 
-### How It Works:
-- The loop now checks for the exclusion condition before processing each package. If the package is a GitHub Actions package, it will be excluded from the `components` list.
-- The script processes packages as usual, handling the unknown version case (`version: unknown`) and formatting the `bom-ref` and `purl` accordingly.
+2. **Handling Unknown Version (`version = 'unknown'`):**
+   - If the `versionInfo` field is empty or missing, it is set to `"unknown"` as a fallback.
+   - The `bom-ref` and `purl` are appropriately formatted to reflect `"unknown"` for these components.
 
-### Example of Excluded GitHub Actions Package:
-The following package will be excluded from the output, and you will see the following log in your console:
+### What this script does:
+- **Excludes GitHub Actions components**: Any components whose name contains `"actions/"`, `"githubactions/"`, or `"github/"` (such as workflow actions) will not be included in the CycloneDX SBOM output.
+- **Handles unknown versions**: If a package does not have a version, `"unknown"` will be assigned, and the `bom-ref` and `purl` will be formatted to reflect this.
+  
+### Example Exclusion Logs:
 ```text
-INFO: Excluding GitHub Action package: githubactions/Eaton-Vance-Corp/configure-aws-credentials
+INFO: Skipping GitHub Action component: githubactions/Eaton-Vance-Corp/configure-aws-credentials
+INFO: Skipping GitHub Action component: githubactions/jfrog/setup-jfrog-cli
 ```
 
-### Next Steps:
-- Test the script with your actual GitHub organization and repository to ensure that GitHub Actions components are properly excluded.
-- Let me know if you encounter any issues or need further adjustments!
+Now, the script should correctly exclude GitHub Actions-related components and handle unknown versions. Let me know if the exclusions are now working as expected!
