@@ -1,16 +1,8 @@
-It seems you're encountering an issue with the package manager designation in your SBOM generation script, specifically regarding the use of "pypi" versus "pip." This confusion arises from the way different package managers and ecosystems are represented in the context of Python packages.
+To address the issue you're facing with the SBOM generation script, specifically regarding how non-Pip components are being labeled as `pip`, we need to ensure that the script accurately identifies and categorizes package managers based on the packages being processed. 
 
-### Understanding the Issue
+### Updated Full Script
 
-1. **Pip vs. PyPI**:
-   - **Pip**: This is the package installer for Python. It is used to install packages from the Python Package Index (PyPI) and other sources.
-   - **PyPI**: This is the repository where Python packages are hosted. When specifying a package URL (purl), it is common to use "pypi" to indicate that the package comes from this repository.
-
-2. **SBOM Generation**: In your SBOM generation script, if you want to keep "pip" as the package manager name instead of converting it to "pypi," you need to adjust how you handle package manager names in your script.
-
-### Full Script with Adjustments
-
-Here’s the complete script that retains "pip" as the package manager when constructing the SBOM:
+Here’s a revised version of the script that ensures proper identification of package managers, including handling cases where non-Pip components are mistakenly labeled as `pip`:
 
 ```python
 import requests
@@ -61,11 +53,13 @@ def infer_package_manager(package_name):
         return 'composer', package_name[9:]
     elif package_name.startswith('cpan/'):
         return 'cpan', package_name[5:]
+    elif package_name.startswith('pip/'):
+        return 'pip', package_name[4:]  # Keep pip as the identifier
     elif ':' in package_name:
         return package_name.split(':', 1)
     else:
-        # Default to pip for Python packages if no specific pattern matches
-        return 'pip', package_name  # Keep pip as the identifier
+        # Default to generic if no specific pattern matches
+        return 'generic', package_name
 
 def generate_sbom(dependencies, owner, repo, repo_version):
     logging.info(f"Generating SBOM for {owner}/{repo}")
@@ -173,26 +167,26 @@ if __name__ == "__main__":
 
 ### Key Adjustments Made:
 
-1. **Package Manager Inference**: The `infer_package_manager` function now defaults to returning `pip` as the package manager when no specific prefix is detected. This ensures that any Python packages will be labeled correctly.
+1. **Package Manager Inference**: The `infer_package_manager` function has been updated to include a check for packages that start with `pip/`. This ensures that any Python packages identified by this prefix will be labeled correctly as `pip`.
 
-2. **PURL Construction**: The PURL (`purl`) and `bom-ref` are constructed using this inferred manager and name.
+2. **Construction of SBOM**: The script constructs the `purl` and `bom-ref` directly from the inferred manager and name without forcing a conversion to `pypi`.
 
-3. **Consistent Naming**: The naming conventions are designed to reflect what you would expect based on how packages are typically managed in Python environments.
+3. **Output Consistency**: The script retains the original naming conventions you expect for Python packages.
 
 ### Usage Instructions:
 
 - Replace `"your-repo-name"` with the actual name of your GitHub repository.
-- Replace `"your-github-access-token"` with a valid GitHub access token.
+- Replace `"your-github-access-token"` with a valid GitHub access token that has permissions to access the repository and its dependency graph.
 - Adjust `output_base` to specify where you want to save the SBOM JSON file.
 
-This script should now generate an SBOM that aligns with your expectations regarding how Python packages are represented. If you have any further adjustments or specific requirements you'd like to implement, feel free to ask!
+This script should now generate an SBOM that correctly reflects the intended structure and naming conventions for all components without mislabeling non-Pip components as Pip. If you encounter any further issues or have specific requirements you'd like to implement, feel free to ask!
 
 Citations:
-[1] https://news.ycombinator.com/item?id=35471569
-[2] https://news.ycombinator.com/item?id=32805483
-[3] https://www.yahooinc.com/paranoids/discovering-a-dangerous-pattern-in-a-popular-python-package-manager
-[4] https://www.reddit.com/r/learnpython/comments/18w6ual/why_peope_hate_python_package_manager/
-[5] https://stackoverflow.com/questions/42171523/how-to-fix-the-broken-package-manager
-[6] https://forums.raspberrypi.com/viewtopic.php?t=282238
-[7] https://dublog.net/blog/so-many-python-package-managers/
-[8] https://dev.to/adamghill/python-package-manager-comparison-1g98
+[1] https://www2.cose.isu.edu/~minhazzibran/resources/MyPapers/SBOM_SAC24_Published.pdf
+[2] https://www.wiz.io/academy/top-open-source-sbom-tools
+[3] https://innolitics.com/articles/sbom-best-practices-faqs-examples/
+[4] https://www.ntia.doc.gov/files/ntia/publications/ntia_sbom_formats_energy_brief_2021.pdf
+[5] http://arxiv.org/html/2409.06390
+[6] https://zt.dev/posts/analysis-spdx-sbom-generator/
+[7] https://sysdig.com/blog/sbom-101-software-bill-of-materials/
+[8] https://www.jit.io/resources/appsec-tools/a-guide-to-generating-sbom-with-syft-and-grype
