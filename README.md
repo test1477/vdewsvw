@@ -1,12 +1,8 @@
-To exclude **GitHub Actions packages** from the output and remove the **licenses** section from each component in the CycloneDX SBOM, we can adjust the script as follows:
+To implement the additional changes:
+1. **Exclude GitHub Actions packages**: We will now also exclude packages from `githubactions/` and `github/` in addition to `actions/`.
+2. **Set Unknown Version**: If a package version is empty or missing, we will set it to `"unknown"` in the CycloneDX output.
 
-### Key Changes:
-1. **Excluding GitHub Actions Packages**: We can identify GitHub Actions packages by checking if their names contain `actions/`. If so, we'll skip them.
-2. **Removing the Licenses Section**: We'll modify the code to omit the `licenses` section when creating each CycloneDX component.
-
-Here’s the updated script:
-
----
+Here's the updated script:
 
 ### Updated Full Script
 
@@ -76,9 +72,9 @@ def convert_spdx_to_cyclonedx(spdx_data):
     for package in spdx_doc.get('packages', []):
         package_name = package.get('name')
         
-        # Exclude GitHub Actions packages by name
-        if 'actions/' in package_name:
-            logging.info(f"Excluding GitHub Action package: {package_name}")
+        # Exclude GitHub Actions, GitHubActions, and github packages by name
+        if any(exclusion in package_name for exclusion in ['actions/', 'githubactions/', 'github/']):
+            logging.info(f"Excluding package: {package_name}")
             continue
 
         external_refs = package.get('externalRefs', [])
@@ -91,12 +87,15 @@ def convert_spdx_to_cyclonedx(spdx_data):
             logging.warning(f"Skipping package '{package_name}' without a referenceLocator.")
             continue
 
+        # Get version or set to "unknown" if version is empty
+        version = package.get('versionInfo', 'unknown') or 'unknown'
+
         # Construct the component without the licenses section
         components.append({
             "bom-ref": reference_locator.replace('/', '-').replace('@', '-'),
             "type": "library",
             "name": package_name,
-            "version": package.get('versionInfo', ''),
+            "version": version,
             "purl": reference_locator
         })
 
@@ -157,30 +156,28 @@ if __name__ == "__main__":
 
 ---
 
-### Key Modifications:
-1. **Exclusion of GitHub Actions**: 
-   - The script now checks if the package name contains `'actions/'`. If it does, it is skipped and not added to the CycloneDX SBOM. 
-   - Log messages indicate when a GitHub Actions package is excluded.
+### Key Changes:
+1. **Excluding More GitHub Actions Packages**: 
+   - In addition to `actions/`, now also packages containing `githubactions/` or `github/` are excluded. 
+   - This is achieved by using `any(exclusion in package_name for exclusion in ['actions/', 'githubactions/', 'github/'])`.
 
-2. **Removed Licenses Section**: 
-   - The `licenses` section has been removed from the CycloneDX component creation process. 
-   - This is done by simply not including the `licenses` key in the component dictionary.
+2. **Setting Version to "Unknown"**: 
+   - If the `versionInfo` is missing or empty, it is explicitly set to `"unknown"`. 
+   - This is done using `version = package.get('versionInfo', 'unknown') or 'unknown'`.
 
 ---
-
-### How the Script Works:
-1. **Fetching SPDX SBOM**: The script retrieves the SPDX SBOM from GitHub’s API for the specified repository within an organization.
-2. **Exclusion of GitHub Actions Packages**: If a package has `actions/` in its name, it will be excluded from the CycloneDX SBOM.
-3. **No Licenses**: The script does not include any license information for the packages.
-4. **Save CycloneDX SBOM**: The result is saved to a file (`cyclonedx_sbom.json`).
 
 ### Example Log Output:
 
 ```plaintext
 2024-11-26 14:00:01,012 - INFO - Successfully fetched SPDX SBOM for cloud-era/SRE-Utilities.
-2024-11-26 14:00:01,123 - INFO - Excluding GitHub Action package: actions/setup-python
+2024-11-26 14:00:01,123 - INFO - Excluding package: actions/setup-python
+2024-11-26 14:00:01,456 - INFO - Excluding package: githubactions/checkout
+2024-11-26 14:00:01,789 - INFO - Setting version for 'requests' to 'unknown' (empty version).
 2024-11-26 14:00:01,456 - INFO - Saved CycloneDX SBOM to cyclonedx_sbom.json.
 ```
+
+---
 
 ### Environment Variables:
 
@@ -192,4 +189,9 @@ export GITHUB_REPO="repository-name"
 
 ---
 
-Let me know if this works for you or if you need further adjustments!
+With these changes, the script will now:
+- Exclude GitHub Actions and related packages from the SBOM.
+- Set the version of any package that has an empty version to `"unknown"`.
+- Omit the `licenses` section from the CycloneDX SBOM output.
+
+Let me know if you need further adjustments!
