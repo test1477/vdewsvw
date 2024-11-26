@@ -1,15 +1,20 @@
-To modify the script so that it excludes any components related to GitHub Actions and also removes the licenses part from each component, we can make a few adjustments in the `convert_spdx_to_cyclonedx` function. 
+To exclude **GitHub Actions packages** from the output and remove the **licenses** section from each component in the CycloneDX SBOM, we can adjust the script as follows:
 
-### Updated Script
+### Key Changes:
+1. **Excluding GitHub Actions Packages**: We can identify GitHub Actions packages by checking if their names contain `actions/`. If so, we'll skip them.
+2. **Removing the Licenses Section**: We'll modify the code to omit the `licenses` section when creating each CycloneDX component.
 
-Here’s the revised script with these changes:
+Here’s the updated script:
+
+---
+
+### Updated Full Script
 
 ```python
 import os
 import logging
 import requests
 from datetime import datetime
-import json
 
 # Setup logging
 logging.basicConfig(
@@ -68,34 +73,31 @@ def convert_spdx_to_cyclonedx(spdx_data):
 
     # Convert packages
     components = []
-    
     for package in spdx_doc.get('packages', []):
-        reference_locator = package.get('referenceLocator')
+        package_name = package.get('name')
         
+        # Exclude GitHub Actions packages by name
+        if 'actions/' in package_name:
+            logging.info(f"Excluding GitHub Action package: {package_name}")
+            continue
+
+        external_refs = package.get('externalRefs', [])
+        reference_locator = next(
+            (ref['referenceLocator'] for ref in external_refs if ref['referenceType'] == 'purl'), 
+            None
+        )
+
         if not reference_locator:
-            logging.warning(f"Skipping package '{package.get('name')}' without a referenceLocator.")
+            logging.warning(f"Skipping package '{package_name}' without a referenceLocator.")
             continue
 
-        # Exclude GitHub Actions packages
-        if 'actions/' in package.get('name', ''):
-            logging.info(f"Skipping GitHub Actions package '{package.get('name')}'.")
-            continue
-
-        # Use the referenceLocator directly as the PURL
-        purl = reference_locator
-        
-        # Construct the bom-ref by replacing '/' and '@' with '-'
-        bom_ref = reference_locator.replace('/', '-').replace('@', '-')
-        
-        # Extract name: Everything between the first '/' and '@'
-        name = reference_locator.split('/')[1].split('@')[0].replace('/', ':')
-
+        # Construct the component without the licenses section
         components.append({
-            "bom-ref": bom_ref,
+            "bom-ref": reference_locator.replace('/', '-').replace('@', '-'),
             "type": "library",
-            "name": name,
-            "version": package.get('versionInfo', 'unknown')  # Default to 'unknown' if no version info is available
-            # Removed licenses part as requested
+            "name": package_name,
+            "version": package.get('versionInfo', ''),
+            "purl": reference_locator
         })
 
     # Construct CycloneDX SBOM
@@ -121,6 +123,7 @@ def save_cyclonedx_sbom(cyclonedx_data, output_file):
         cyclonedx_data (dict): CycloneDX SBOM data.
         output_file (str): File path to save the SBOM.
     """
+    import json
     try:
         with open(output_file, 'w') as file:
             json.dump(cyclonedx_data, file, indent=2)
@@ -142,31 +145,51 @@ if __name__ == "__main__":
 
     # Fetch SPDX SBOM from GitHub
     spdx_data = fetch_spdx_sbom(ORG_NAME, REPO_NAME, GITHUB_TOKEN)
-    
     if spdx_data:
         logging.info(f"Successfully fetched SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
-        
         # Convert SPDX to CycloneDX
         cyclonedx_data = convert_spdx_to_cyclonedx(spdx_data)
-        
         # Save CycloneDX SBOM to a file
         save_cyclonedx_sbom(cyclonedx_data, OUTPUT_FILE)
-        
     else:
         logging.error(f"Failed to fetch SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
 ```
 
-### Key Changes Made:
+---
 
-1. **Exclusion of GitHub Actions Packages**: The script now checks if the package name contains `actions/` and skips those packages. This means any components related to GitHub Actions will not be included in the final output.
+### Key Modifications:
+1. **Exclusion of GitHub Actions**: 
+   - The script now checks if the package name contains `'actions/'`. If it does, it is skipped and not added to the CycloneDX SBOM. 
+   - Log messages indicate when a GitHub Actions package is excluded.
 
-2. **Removal of Licenses**: The licenses section has been removed from each component in the CycloneDX output.
+2. **Removed Licenses Section**: 
+   - The `licenses` section has been removed from the CycloneDX component creation process. 
+   - This is done by simply not including the `licenses` key in the component dictionary.
 
-### Usage Instructions:
+---
 
-- Ensure you have your GitHub token, organization name, and repository name set either directly in the script or as environment variables.
-- Run the script in your Python environment.
+### How the Script Works:
+1. **Fetching SPDX SBOM**: The script retrieves the SPDX SBOM from GitHub’s API for the specified repository within an organization.
+2. **Exclusion of GitHub Actions Packages**: If a package has `actions/` in its name, it will be excluded from the CycloneDX SBOM.
+3. **No Licenses**: The script does not include any license information for the packages.
+4. **Save CycloneDX SBOM**: The result is saved to a file (`cyclonedx_sbom.json`).
 
-### Expected Output:
+### Example Log Output:
 
-The resulting `cyclonedx_sbom.json` file should now contain only the relevant library components without any GitHub Actions packages and without license information. If you have further requirements or adjustments needed, feel free to ask!
+```plaintext
+2024-11-26 14:00:01,012 - INFO - Successfully fetched SPDX SBOM for cloud-era/SRE-Utilities.
+2024-11-26 14:00:01,123 - INFO - Excluding GitHub Action package: actions/setup-python
+2024-11-26 14:00:01,456 - INFO - Saved CycloneDX SBOM to cyclonedx_sbom.json.
+```
+
+### Environment Variables:
+
+```bash
+export GITHUB_TOKEN="your_personal_access_token"
+export GITHUB_ORG="organization-name"
+export GITHUB_REPO="repository-name"
+```
+
+---
+
+Let me know if this works for you or if you need further adjustments!
