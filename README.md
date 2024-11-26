@@ -1,4 +1,4 @@
-Certainly! I'll provide you with the full script that incorporates the logic for correctly formatting the SBOM components. This script will process a single repository and generate an SBOM with the correct format for each component. Here's the complete script:
+To generate an SBOM that matches your expected format using the provided script, we need to ensure that the `purl`, `bom-ref`, and `name` fields are constructed correctly for each package. Here is a revised version of the script that should produce the desired output:
 
 ```python
 import requests
@@ -65,8 +65,22 @@ def generate_sbom(dependencies, owner, repo, repo_version):
         if ':' in package['name']:
             pkg_manager, pkg_name = package['name'].split(':', 1)
         else:
-            pkg_manager = ""
-            pkg_name = package['name']
+            # Attempt to infer package manager from the package name
+            if package['name'].startswith('npm/'):
+                pkg_manager = 'npm'
+                pkg_name = package['name'][4:]
+            elif package['name'].startswith('maven/'):
+                pkg_manager = 'maven'
+                pkg_name = package['name'][6:]
+            elif package['name'].startswith('composer/'):
+                pkg_manager = 'composer'
+                pkg_name = package['name'][9:]
+            elif package['name'].startswith('cpan/'):
+                pkg_manager = 'cpan'
+                pkg_name = package['name'][5:]
+            else:
+                pkg_manager = 'generic'
+                pkg_name = package['name']
 
         # Normalize package manager name
         if pkg_manager == 'pip':
@@ -75,13 +89,13 @@ def generate_sbom(dependencies, owner, repo, repo_version):
         version_info = clean_version(package.get('versionInfo', ""))
 
         # Construct PURL
-        purl = f"pkg:{pkg_manager}/{pkg_name}@{version_info}" if pkg_manager else f"pkg:{pkg_name}@{version_info}"
+        purl = f"pkg:{pkg_manager}/{pkg_name}@{version_info}"
 
         # Construct bom-ref
         bom_ref = purl
 
         # Construct name
-        name = f"{pkg_manager}:{pkg_name}" if pkg_manager else pkg_name
+        name = f"{pkg_manager}:{pkg_name}"
 
         components.append({
             "bom-ref": bom_ref,
@@ -153,19 +167,24 @@ if __name__ == "__main__":
     process_single_repo(owner, repo_name, access_token, output_base)
 ```
 
-This script includes the following key features:
+### Key Features in This Script:
 
-1. Correctly formats the SBOM components with the proper `bom-ref`, `name`, `version`, and `purl` fields.
-2. Handles cases where a package manager is specified (e.g., `pypi:datadog`) and when it's not.
-3. Normalizes package manager names (e.g., 'pip' to 'pypi').
-4. Excludes GitHub Actions and related components from the SBOM.
-5. Uses the latest release version of the repository if available, otherwise uses "unknown".
-6. Generates and saves the SBOM as a JSON file.
+1. **Package Manager Detection**: The script attempts to infer the package manager from the prefix of the package name. If a known prefix is detected (e.g., `composer/`, `cpan/`), it sets the appropriate manager.
 
-To use this script:
+2. **PURL Construction**: The Package URL (`purl`) is constructed based on the detected or inferred package manager and includes the version information.
 
-1. Replace `"your-repo-name"` with the actual name of the repository you want to process.
-2. Replace `"your-github-access-token"` with a valid GitHub access token that has permissions to access the repository and its dependency graph.
-3. Adjust the `output_base` path if needed.
+3. **Consistent Format**: The `bom-ref`, `name`, and `purl` fields are consistently formatted according to your specified requirements.
 
-This script should now generate an SBOM with components formatted according to your specifications.
+4. **Fallback Logic**: If no specific prefix is detected in the name to infer a manager (e.g., Composer or CPAN), it defaults to using a generic manager.
+
+This script should now generate an SBOM with components formatted exactly as you expect. Adjust the logic further if you have additional specific rules for determining the package manager or format.
+
+Citations:
+[1] https://snyk.io/blog/creating-sboms-snyk-cli/
+[2] https://www.reddit.com/r/linuxquestions/comments/y8obe9/a_tool_to_generate_and_merge_sbom_in_spdx_format/
+[3] https://aquasecurity.github.io/trivy/v0.33/docs/sbom/spdx/
+[4] https://github.com/opensbom-generator/spdx-sbom-generator
+[5] https://zt.dev/posts/analysis-spdx-sbom-generator/
+[6] https://helm.docs.medcrypt.com/dont-have-an-sbom-yet/generate-spdx-sbom-with-open-source-tools
+[7] https://anchore.com/sbom/how-to-generate-an-sbom-with-free-open-source-tools/
+[8] https://helm.docs.medcrypt.com/dont-have-an-sbom-yet/generate-cyclonedx-sbom-with-open-source-tools
