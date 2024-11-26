@@ -1,4 +1,4 @@
-Here's the full script modified to fetch SBOM data for a single repository:
+Here's the full script that fetches SBOM data for a single repository, incorporates your requirements to skip GitHub Actions components, sets empty versions to "unknown," and formats the `bom-ref` and `name` fields correctly:
 
 ```python
 import requests
@@ -11,9 +11,13 @@ from datetime import datetime
 import pytz
 import re
 
+# Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def get_dependencies(owner, repo, access_token):
+    """
+    Fetches the dependencies for a given GitHub repository using the dependency graph API.
+    """
     logging.info(f"Fetching dependencies for repo: {owner}/{repo}")
     url = f"https://api.github.com/repos/{owner}/{repo}/dependency-graph/sbom"
     headers = {
@@ -27,6 +31,9 @@ def get_dependencies(owner, repo, access_token):
     return response.json()
 
 def get_latest_release_version(repo):
+    """
+    Fetches the latest release version for a given GitHub repository.
+    """
     try:
         latest_release = repo.get_latest_release()
         version = latest_release.tag_name
@@ -36,9 +43,15 @@ def get_latest_release_version(repo):
         return None
 
 def clean_version(version):
+    """
+    Cleans the version string by removing any prefixes like '^', '~', etc.
+    """
     return re.sub(r'^[^0-9]*', '', version)
 
 def generate_sbom(dependencies, owner, repo, repo_version):
+    """
+    Generates a CycloneDX SBOM from the given dependencies.
+    """
     logging.info(f"Generating SBOM for {owner}/{repo}")
     
     repo_name = f"{owner}/{repo}"
@@ -57,28 +70,33 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             continue
 
         version_info = clean_version(package.get('versionInfo', ""))
-        package_name = package['name'].replace(':', '-')
-        bom_ref = f"{package_name}-{version_info}"
-        
-        if ':' in package['name']:
-            pkg_manager, pkg_name = package['name'].split(':', 1)
-            if pkg_manager == 'pip':
-                pkg_manager = 'pypi'
-            purl = f"pkg:{pkg_manager}/{pkg_name}@{version_info}"
-        else:
-            pkg_manager = ""
-            pkg_name = package['name']
-            purl = f"pkg:{package['name']}@{version_info}"
-        
-        if "pkg:actions" in bom_ref.lower() or "actions:" in package['name'].lower():
+        if not version_info:
+            version_info = "unknown"
+
+        # Skip components related to GitHub Actions
+        if "actions" in package['name'].lower():
             continue
+
+        purl = next((ref['referenceLocator'] for ref in package.get('externalReferences', []) if ref['referenceType'] == 'purl'), None)
         
+        if not purl:
+            continue
+
+        pkg_manager = purl.split(':')[1].split('/')[0] if ':' in purl else ""
+        pkg_name = purl.split('/')[-1].split('@')[0] if '/' in purl else package['name']
+
         if pkg_manager == 'pypi':
-            bom_ref = f"pkg:{pkg_manager}-{pkg_name}-{version_info}"
-            package_name = f"{pkg_manager}:{pkg_name}"
-        
+            bom_ref = f"pkg:pypi/{pkg_name}@{version_info}"
+            package_name = f"pypi:{pkg_name}"
+        elif pkg_manager == 'npm':
+            bom_ref = f"pkg:npm/{pkg_name}@{version_info}"
+            package_name = f"npm:{pkg_name}"
+        else:
+            bom_ref = f"pkg:{pkg_name}@{version_info}"
+            package_name = pkg_name
+
         components.append({
-            "bom-ref": f"pkg:{bom_ref}",
+            "bom-ref": bom_ref,
             "type": "library",
             "name": package_name,
             "version": version_info,
@@ -102,6 +120,9 @@ def generate_sbom(dependencies, owner, repo, repo_version):
     return sbom_data
 
 def save_sbom_to_file(sbom_data, filename):
+    """
+    Saves the SBOM data to a JSON file.
+    """
     try:
         with open(filename, 'w') as f:
             json.dump(sbom_data, f, indent=2)
@@ -143,7 +164,30 @@ if __name__ == "__main__":
     process_repository(owner, repo_name, access_token, output_base)
 ```
 
-This script fetches SBOM data for a single repository, skipping it if it's archived or has no releases. Replace the placeholder values in the `if __name__ == "__main__":` block with your actual repository details and access token before running the script.
+### Key Features:
+
+- **Excludes GitHub Actions Components**: Skips any components related to GitHub Actions.
+- **Handles Empty Versions**: Sets the version to `"unknown"` if it is empty.
+- **Correct PURL Handling**: Uses `purl` from `externalReferences` and formats `bom-ref` and `name` fields correctly for PyPI and npm packages.
+- **Processes Single Repository**: Fetches SBOM data for a single specified repository.
+
+### Usage Instructions:
+
+1. **Install Required Libraries**:
+
+   Ensure you have the required libraries installed:
+
+   ```sh
+   pip install requests PyGithub pytz
+   ```
+
+2. **Update Placeholder Values**:
+
+   Replace the placeholder values in the `if __name__ == "__main__":` block with your actual repository details and access token.
+
+3. **Run the Script**:
+
+   Execute the script to process the specified repository and generate CycloneDX SBOMs.
 
 Citations:
 [1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/11902716/dc271a97-b25c-48bc-bf41-1f211b3bdc55/paste.txt
