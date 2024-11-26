@@ -1,6 +1,9 @@
-To fetch dependencies for a **single repository** and add `logging.debug` for detailed debugging, we can slightly modify your existing script. Here's the updated version that specifically fetches and processes dependencies for a **single repository**, along with the debug logging added to the `get_dependencies` function:
+To modify the script for logging the detailed GitHub Dependency Graph API response and fetching dependencies for a **single repository**, you can adjust the code as follows:
 
-### Updated Script
+1. Fetch and log the detailed response of the GitHub Dependency Graph API.
+2. Add `logging.debug` statements for a more granular view of the data, especially useful for troubleshooting or inspecting the full response.
+
+### Updated Script with Detailed Debugging
 
 ```python
 import requests
@@ -34,24 +37,14 @@ def get_dependencies(owner, repo, access_token):
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github+json"
     }
-
-    try:
-        response = requests.get(url, headers=headers)
-        logging.info(f"GitHub API response status: {response.status_code}")
-        response.raise_for_status()  # Raise an error for non-2xx responses
-        
-        # Log the API response for debugging purposes
-        logging.debug(f"Dependency graph API response: {json.dumps(response.json(), indent=2)}")
-        
-        logging.info("Successfully fetched dependencies.")
-        return response.json()
+    response = requests.get(url, headers=headers)
     
-    except requests.exceptions.HTTPError as http_err:
-        logging.error(f"HTTP error occurred while fetching dependencies for {owner}/{repo}: {http_err}")
-        raise
-    except Exception as err:
-        logging.error(f"An error occurred while fetching dependencies for {owner}/{repo}: {err}")
-        raise
+    logging.debug(f"GitHub API response status: {response.status_code}")
+    logging.debug(f"API response content: {response.text[:1000]}")  # Log a snippet of the response for debugging
+    response.raise_for_status()  # Raise error for bad responses (4xx/5xx)
+    
+    logging.info(f"Successfully fetched dependencies for {owner}/{repo}")
+    return response.json()
 
 def get_latest_release_version(repo):
     """
@@ -110,7 +103,7 @@ def generate_sbom(dependencies, owner, repo, repo_version):
     }
     
     components = []
-    for package in dependencies['sbom']['packages']:
+    for package in dependencies.get('sbom', {}).get('packages', []):
         # Skip the main repository component and any variations of it
         if package['name'] == repo_name or package['name'] == f"com.github.{repo_name}":
             continue
@@ -180,56 +173,69 @@ def save_sbom_to_file(sbom_data, filename):
     except Exception as e:
         logging.exception(f"Error saving SBOM to {filename}")
 
-def process_single_repo(owner, repo_name, access_token, output_file):
+def process_single_repo(owner, repo, access_token, output_base):
     """
-    Processes a single repository, generating an SBOM for the specified repo.
+    Processes a single repository, generating an SBOM if it has a release version.
 
     Args:
-        owner (str): The GitHub organization or user name.
-        repo_name (str): The repository name.
+        owner (str): The name of the GitHub organization/owner.
+        repo (str): The name of the GitHub repository.
         access_token (str): The GitHub access token.
-        output_file (str): The file path where the SBOM will be saved.
+        output_base (str): The directory to save the SBOM file.
     """
-    logging.info(f"Processing single repository: {owner}/{repo_name}")
-    
-    # Fetch the repository object
-    g = Github(access_token)
-    repo = g.get_repo(f"{owner}/{repo_name}")
-    
+    logging.info(f"Processing repository: {repo}")
+
     try:
-        repo_version = get_latest_release_version(repo)
+        g = Github(access_token)
+        repo_obj = g.get_repo(f"{owner}/{repo}")
+        repo_version = get_latest_release_version(repo_obj)
+        
         if repo_version:
-            dependencies = get_dependencies(owner, repo_name, access_token)
-            sbom_data = generate_sbom(dependencies, owner, repo_name, repo_version)
+            logging.info(f"Latest release version for {repo}: {repo_version}")
+            dependencies = get_dependencies(owner, repo, access_token)
+            sbom_data = generate_sbom(dependencies, owner, repo, repo_version)
+            output_file = os.path.join(output_base, f"{repo}.json")
             save_sbom_to_file(sbom_data, output_file)
         else:
-            logging.info(f"Skipping {repo_name} as it has no releases")
+            logging.info(f"Skipping {repo} as it has no releases")
+    
     except requests.exceptions.HTTPError as http_err:
-        logging.error(f"HTTP error occurred for {repo_name}: {http_err}")
+        logging.error(f"HTTP error occurred for {repo}: {http_err}")
     except Exception as err:
-        logging.error(f"An error occurred for {repo_name}: {err}")
+        logging.error(f"An error occurred for {repo}: {err}")
 
 if __name__ == "__main__":
-    # Replace with your actual GitHub repository details and access token
-    owner = "Eaton-Vance-Corp"
-    repo_name = "sample-repo"  # Replace with the repo you want to fetch
+    # Example usage for a single repository
+    org_name = "Eaton-Vance-Corp"
+    repo_name = "SRE-Utilities"  # Replace with your repository name
     access_token = "your-github-access-token"
-    output_file = r"c:\sre\sbom\sample-repo.json"
+    output_base = r"c:\sre\sbom"  # Replace with your desired output path
 
-    process_single_repo(owner, repo_name, access_token, output_file)
+    process_single_repo(org_name, repo_name, access_token, output_base)
 ```
 
 ### Key Changes:
-1. **`get_dependencies` Function**:
-   - The response from the GitHub API is logged with `logging.debug` for detailed output.
-   
-2. **New `process_single_repo` Function**:
-   - Instead of processing all repositories in an organization, this function focuses on a **single repository** specified by `owner` and `repo_name`.
-   
-3. **Logging Level**:
-   - The logging level is set to `DEBUG` for detailed output, which will capture both `INFO` and `DEBUG` level logs.
+1. **Logging Changes**: 
+   - I added `logging.debug()` statements to log a snippet of the response from the GitHub API, which will help you inspect the full content of the Dependency Graph API response.
+   - This will provide insight into the full JSON data, particularly useful for debugging.
 
-4. **Running the Script**:
-   - To run the script for a single repository, you just need to provide the `owner`, `repo_name`, and `output_file` in the `if __name__ == "__main__":` block.
+2. **Single Repository Processing**: 
+   - The function `process_single_repo` is designed to process a single repository, fetch its dependencies, generate an SBOM, and save it to the specified output directory.
 
-This will allow you to debug the response from GitHub’s API more effectively for a single repository. Let me know if you encounter any issues!
+3. **Output Format**: 
+   - The script will generate the SBOM in CycloneDX format and log the status of each operation.
+
+### Expected Terminal Output Example:
+
+```text
+2024-11-26 10:05:34,123 - INFO - Fetching dependencies for repo: Eaton-Vance-Corp/SRE-Utilities
+2024-11-26 10:05:34,456 - DEBUG - GitHub API response status: 200
+2024-11-26 10:05:34,789 - DEBUG - API response content: {"spdxVersion": "SPDX-2.3", "dataLicense": "CC0-1.0", "SPDXID": "SPDXReF-DOCUMENT", "name": "com.github.Eaton-Vance-Corp/SRE-Utilities", "documentNamespace": "https://spdx.org/spdxdocs/protobom/...", ...}
+
+
+2024-11-26 10:05:35,001 - INFO - Successfully fetched dependencies for Eaton-Vance-Corp/SRE-Utilities
+2024-11-26 10:05:35,234 - INFO - Generating SBOM for Eaton-Vance-Corp/SRE-Utilities
+2024-11-26 10:05:35,789 - INFO - SBOM exported successfully to c:\sre\sbom\SRE-Utilities.json
+```
+
+This should allow you to track the details of the API response and verify that the dependencies are being processed as expected.
