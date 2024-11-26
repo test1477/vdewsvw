@@ -1,18 +1,8 @@
-To meet the new requirements:
-1. **Unknown components**: If the version is unknown or empty, the `bom-ref` and `purl` need to be formatted accordingly, with the version marked as `"unknown"`. The component should look like:
-   ```json
-   {
-       "bom-ref": "pkg:pypi-pytz-unknown",
-       "type": "library",
-       "name": "pytz",
-       "version": "unknown",
-       "purl": "pkg:pypi/pytz@unknown"
-   }
-   ```
+To ensure GitHub Actions workflow components (such as those prefixed with `githubactions/` and `github/`) are completely excluded from the output, we need to ensure that the exclusion logic is applied properly when processing each package. Specifically, we should check if the package name contains any of the patterns like `githubactions/`, `actions/`, or `github/` before including it in the CycloneDX SBOM.
 
-2. **Exclude GitHub Actions packages**: GitHub Actions packages (with names like `githubactions/` or `github/`) should be excluded completely. The output should not contain these packages at all.
+Let's adjust the exclusion logic to make sure it's applied properly. The exclusion should be applied inside the loop where packages are processed, before they are added to the `components` list.
 
-### Updated Script
+### Updated Script:
 
 ```python
 import os
@@ -81,8 +71,8 @@ def convert_spdx_to_cyclonedx(spdx_data):
         package_name = package.get('name')
         
         # Exclude GitHub Actions, GitHubActions, and github packages by name
-        if any(exclusion in package_name for exclusion in ['actions/', 'githubactions/', 'github/']):
-            logging.info(f"Excluding package: {package_name}")
+        if any(exclusion in package_name.lower() for exclusion in ['actions/', 'githubactions/', 'github/']):
+            logging.info(f"Excluding GitHub Action package: {package_name}")
             continue
 
         external_refs = package.get('externalRefs', [])
@@ -169,48 +159,25 @@ if __name__ == "__main__":
         logging.error(f"Failed to fetch SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
 ```
 
----
-
-### Key Changes:
-1. **Excluded GitHub Actions and Related Packages**:
-   - Packages with names containing `actions/`, `githubactions/`, or `github/` are excluded completely from the SBOM.
-   - This is done with the check: `if any(exclusion in package_name for exclusion in ['actions/', 'githubactions/', 'github/'])`.
-
-2. **Handling Unknown Versions**:
-   - If a package has an empty or missing version, the version is set to `"unknown"`.
-   - The `bom-ref` and `purl` for these packages are updated to follow this format:
-     ```json
-     "bom-ref": "pkg:pypi-pytz-unknown",
-     "purl": "pkg:pypi/pytz@unknown"
-     ```
-
-### Example Output for "Unknown" Version:
-```json
-{
-    "bom-ref": "pkg:pypi-pytz-unknown",
-    "type": "library",
-    "name": "pytz",
-    "version": "unknown",
-    "purl": "pkg:pypi/pytz@unknown"
-}
-```
-
-### Excluded GitHub Actions Package Example:
-These packages are excluded from the CycloneDX output:
-```json
-{
-    "bom-ref": "pkg:githubactions-Eaton-Vance-Corp-configure-aws-credentials-1.42A.2A",
-    "type": "library",
-    "name": "Eaton-Vance-Corp/configure-aws-credentials",
-    "version": "1.*.*",
-    "purl": "pkg:githubactions/Eaton-Vance-Corp/configure-aws-credentials@1.2A.2A"
-}
-```
-
----
-
-### Summary:
-- **GitHub Actions packages** (e.g., `githubactions/` and `github/`) are fully excluded.
-- **Packages with unknown versions** are marked with `"unknown"` for both version and the associated `bom-ref`/`purl` fields.
+### Key Update:
+- **Exclusion of GitHub Actions Components**: The exclusion logic now specifically checks if the package name contains `actions/`, `githubactions/`, or `github/`, and **logs a message** when a package is excluded. It uses `.lower()` on the package name to ensure the exclusion is case-insensitive.
   
-Let me know if you need more changes!
+   ```python
+   if any(exclusion in package_name.lower() for exclusion in ['actions/', 'githubactions/', 'github/']):
+       logging.info(f"Excluding GitHub Action package: {package_name}")
+       continue
+   ```
+
+### How It Works:
+- The loop now checks for the exclusion condition before processing each package. If the package is a GitHub Actions package, it will be excluded from the `components` list.
+- The script processes packages as usual, handling the unknown version case (`version: unknown`) and formatting the `bom-ref` and `purl` accordingly.
+
+### Example of Excluded GitHub Actions Package:
+The following package will be excluded from the output, and you will see the following log in your console:
+```text
+INFO: Excluding GitHub Action package: githubactions/Eaton-Vance-Corp/configure-aws-credentials
+```
+
+### Next Steps:
+- Test the script with your actual GitHub organization and repository to ensure that GitHub Actions components are properly excluded.
+- Let me know if you encounter any issues or need further adjustments!
