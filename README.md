@@ -1,10 +1,18 @@
-To implement the additional changes:
-1. **Exclude GitHub Actions packages**: We will now also exclude packages from `githubactions/` and `github/` in addition to `actions/`.
-2. **Set Unknown Version**: If a package version is empty or missing, we will set it to `"unknown"` in the CycloneDX output.
+To meet the new requirements:
+1. **Unknown components**: If the version is unknown or empty, the `bom-ref` and `purl` need to be formatted accordingly, with the version marked as `"unknown"`. The component should look like:
+   ```json
+   {
+       "bom-ref": "pkg:pypi-pytz-unknown",
+       "type": "library",
+       "name": "pytz",
+       "version": "unknown",
+       "purl": "pkg:pypi/pytz@unknown"
+   }
+   ```
 
-Here's the updated script:
+2. **Exclude GitHub Actions packages**: GitHub Actions packages (with names like `githubactions/` or `github/`) should be excluded completely. The output should not contain these packages at all.
 
-### Updated Full Script
+### Updated Script
 
 ```python
 import os
@@ -90,13 +98,20 @@ def convert_spdx_to_cyclonedx(spdx_data):
         # Get version or set to "unknown" if version is empty
         version = package.get('versionInfo', 'unknown') or 'unknown'
 
-        # Construct the component without the licenses section
+        # Construct the component, handling the "unknown" version case
+        if version == 'unknown':
+            bom_ref = f"pkg:{package_name.replace('/', '-')}-unknown"
+            purl = f"pkg:{reference_locator}@unknown"
+        else:
+            bom_ref = reference_locator.replace('/', '-').replace('@', '-')
+            purl = reference_locator
+
         components.append({
-            "bom-ref": reference_locator.replace('/', '-').replace('@', '-'),
+            "bom-ref": bom_ref,
             "type": "library",
             "name": package_name,
             "version": version,
-            "purl": reference_locator
+            "purl": purl
         })
 
     # Construct CycloneDX SBOM
@@ -157,41 +172,45 @@ if __name__ == "__main__":
 ---
 
 ### Key Changes:
-1. **Excluding More GitHub Actions Packages**: 
-   - In addition to `actions/`, now also packages containing `githubactions/` or `github/` are excluded. 
-   - This is achieved by using `any(exclusion in package_name for exclusion in ['actions/', 'githubactions/', 'github/'])`.
+1. **Excluded GitHub Actions and Related Packages**:
+   - Packages with names containing `actions/`, `githubactions/`, or `github/` are excluded completely from the SBOM.
+   - This is done with the check: `if any(exclusion in package_name for exclusion in ['actions/', 'githubactions/', 'github/'])`.
 
-2. **Setting Version to "Unknown"**: 
-   - If the `versionInfo` is missing or empty, it is explicitly set to `"unknown"`. 
-   - This is done using `version = package.get('versionInfo', 'unknown') or 'unknown'`.
+2. **Handling Unknown Versions**:
+   - If a package has an empty or missing version, the version is set to `"unknown"`.
+   - The `bom-ref` and `purl` for these packages are updated to follow this format:
+     ```json
+     "bom-ref": "pkg:pypi-pytz-unknown",
+     "purl": "pkg:pypi/pytz@unknown"
+     ```
 
----
+### Example Output for "Unknown" Version:
+```json
+{
+    "bom-ref": "pkg:pypi-pytz-unknown",
+    "type": "library",
+    "name": "pytz",
+    "version": "unknown",
+    "purl": "pkg:pypi/pytz@unknown"
+}
+```
 
-### Example Log Output:
-
-```plaintext
-2024-11-26 14:00:01,012 - INFO - Successfully fetched SPDX SBOM for cloud-era/SRE-Utilities.
-2024-11-26 14:00:01,123 - INFO - Excluding package: actions/setup-python
-2024-11-26 14:00:01,456 - INFO - Excluding package: githubactions/checkout
-2024-11-26 14:00:01,789 - INFO - Setting version for 'requests' to 'unknown' (empty version).
-2024-11-26 14:00:01,456 - INFO - Saved CycloneDX SBOM to cyclonedx_sbom.json.
+### Excluded GitHub Actions Package Example:
+These packages are excluded from the CycloneDX output:
+```json
+{
+    "bom-ref": "pkg:githubactions-Eaton-Vance-Corp-configure-aws-credentials-1.42A.2A",
+    "type": "library",
+    "name": "Eaton-Vance-Corp/configure-aws-credentials",
+    "version": "1.*.*",
+    "purl": "pkg:githubactions/Eaton-Vance-Corp/configure-aws-credentials@1.2A.2A"
+}
 ```
 
 ---
 
-### Environment Variables:
-
-```bash
-export GITHUB_TOKEN="your_personal_access_token"
-export GITHUB_ORG="organization-name"
-export GITHUB_REPO="repository-name"
-```
-
----
-
-With these changes, the script will now:
-- Exclude GitHub Actions and related packages from the SBOM.
-- Set the version of any package that has an empty version to `"unknown"`.
-- Omit the `licenses` section from the CycloneDX SBOM output.
-
-Let me know if you need further adjustments!
+### Summary:
+- **GitHub Actions packages** (e.g., `githubactions/` and `github/`) are fully excluded.
+- **Packages with unknown versions** are marked with `"unknown"` for both version and the associated `bom-ref`/`purl` fields.
+  
+Let me know if you need more changes!
