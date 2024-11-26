@@ -1,59 +1,75 @@
-Certainly! Let's incorporate the provided logic into the script to ensure that the components are correctly populated based on the `referenceLocator`. The following full script includes your suggested method for extracting components from the `dependencies` data:
+To include an **access token** for authentication when fetching dependencies or repository data, you typically use it to call an API and retrieve the required data dynamically. Below is an updated version of the script, demonstrating how you can include an **access token** securely and use it for API requests.
 
-### Full Script with Component Extraction
-
+### Updated Script with Access Token
 ```python
-import requests
 import json
-import os
-import logging
-from github import Github
-from github import GithubException
-from datetime import datetime
+import requests
 import pytz
-import re
+from datetime import datetime
+import logging
+import os
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def get_dependencies(owner, repo, access_token):
-    logging.info(f"Fetching dependencies for repo: {owner}/{repo}")
+# Load the access token securely (e.g., from environment variables)
+ACCESS_TOKEN = os.getenv("GITHUB_ACCESS_TOKEN")  # Replace with your token if testing locally
+if not ACCESS_TOKEN:
+    raise ValueError("Access token is missing. Set the GITHUB_ACCESS_TOKEN environment variable.")
+
+def fetch_dependencies(owner, repo):
+    """
+    Fetches the dependencies for a given repository using the GitHub API.
+
+    Args:
+        owner (str): Owner of the repository.
+        repo (str): Name of the repository.
+
+    Returns:
+        dict: Dependencies fetched from the GitHub API.
+    """
+    logging.info(f"Fetching dependencies for {owner}/{repo}")
     url = f"https://api.github.com/repos/{owner}/{repo}/dependency-graph/sbom"
+
     headers = {
-        "Authorization": f"token {access_token}",
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
         "Accept": "application/vnd.github+json"
     }
+
     response = requests.get(url, headers=headers)
-    logging.info(f"GitHub API response status: {response.status_code}")
-    response.raise_for_status()
-    logging.info("Successfully fetched dependencies.")
-    return response.json()
 
-def get_latest_release_version(repo):
-    try:
-        latest_release = repo.get_latest_release()
-        version = latest_release.tag_name
-        return version[1:] if version.startswith('v') else version
-    except GithubException:
-        logging.warning(f"No releases found for {repo.full_name}")
-        return None
-
-def clean_version(version):
-    return re.sub(r'^[^0-9]*', '', version) if version else "unknown"
+    if response.status_code == 200:
+        logging.info(f"Dependencies fetched successfully for {owner}/{repo}")
+        return response.json()
+    else:
+        logging.error(f"Failed to fetch dependencies: {response.status_code} {response.text}")
+        return {}
 
 def generate_sbom(dependencies, owner, repo, repo_version):
-    logging.info(f"Generating SBOM for {owner}/{repo}")
+    """
+    Generates a CycloneDX SBOM from the given dependencies.
 
-    repo_name = f"{owner}/{repo}"
+    Args:
+        dependencies (dict): The JSON response containing the SBOM data.
+        owner (str): The owner of the repository.
+        repo (str): The name of the repository.
+        repo_version (str): The version of the repository.
+
+    Returns:
+        dict: The generated SBOM data in CycloneDX format.
+    """
+    logging.info(f"Generating SBOM for {owner}/{repo}")
     
+    # Metadata for the repository itself
+    repo_name = f"{owner}/{repo}"
     metadata_component = {
-        "bom-ref": f"pkg:TRAINPACKAGE/{repo_name}",
+        "bom-ref": f"pkg:repository/{repo_name}@{repo_version}",
         "type": "application",
         "name": repo_name,
         "version": repo_version,
-        "purl": f"pkg:TRAINPACKAGE/{repo_name}@{repo_version}"
+        "purl": f"pkg:repository/{repo_name}@{repo_version}"
     }
-
+    
     # Components section
     components = []
     for package in dependencies.get('sbom', {}).get('packages', []):
@@ -75,13 +91,15 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             "bom-ref": bom_ref,
             "type": "library",
             "name": name,
-            "version": package.get('versionInfo', 'unknown'),  # Default to 'unknown' if no version info is available
+            "version": package.get('versionInfo', ''),
             "purl": purl
         })
 
+    # Generate timestamp in ISO format
     eastern = pytz.timezone('US/Eastern')
     timestamp = datetime.now(eastern).isoformat(timespec='seconds')
 
+    # Complete SBOM structure
     sbom_data = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -95,68 +113,82 @@ def generate_sbom(dependencies, owner, repo, repo_version):
 
     return sbom_data
 
-def save_sbom_to_file(sbom_data, filename):
+
+def save_sbom_to_file(sbom_data, output_file):
+    """
+    Saves the generated SBOM data to a JSON file.
+
+    Args:
+        sbom_data (dict): The SBOM data to save.
+        output_file (str): Path to the output file.
+    """
     try:
-        with open(filename, 'w') as f:
-            json.dump(sbom_data, f, indent=2)
-        logging.info(f"SBOM exported successfully to {filename}")
+        with open(output_file, "w", encoding="utf-8") as file:
+            json.dump(sbom_data, file, indent=4)
+        logging.info(f"SBOM saved to {output_file}")
     except Exception as e:
-        logging.exception(f"Error saving SBOM to {filename}")
+        logging.error(f"Failed to save SBOM: {e}")
 
-def process_single_repo(owner, repo_name, access_token, output_base):
-    g = Github(access_token)
-
-    try:
-        repo = g.get_repo(f"{owner}/{repo_name}")
-        logging.info(f"Processing repository: {repo.full_name}")
-
-        os.makedirs(output_base, exist_ok=True)
-
-        repo_version = get_latest_release_version(repo)
-
-        if repo_version:
-            dependencies = get_dependencies(owner, repo.name, access_token)
-            sbom_data = generate_sbom(dependencies, owner, repo.name, repo_version)
-            output_file = os.path.join(output_base, f"{repo.name}.json")
-            save_sbom_to_file(sbom_data, output_file)
-        else:
-            logging.info(f"No releases found for {repo.name}, using 'unknown' as version")
-            dependencies = get_dependencies(owner, repo.name, access_token)
-            sbom_data = generate_sbom(dependencies, owner, repo.name, "unknown")
-            output_file = os.path.join(output_base, f"{repo.name}.json")
-            save_sbom_to_file(sbom_data, output_file)
-
-    except requests.exceptions.HTTPError as http_err:
-        logging.error(f"HTTP error occurred for {repo.name}: {http_err}")
-    except Exception as err:
-        logging.error(f"An error occurred for {repo.name}: {err}")
 
 if __name__ == "__main__":
-    # Replace these values with your actual GitHub repository details and access token
-    owner = "Eaton-Vance-Corp"
-    repo_name = "your-repo-name"
-    access_token = "your-github-access-token"
-    output_base = r"c:\sre\sbom"
+    # Define the repository details
+    owner = "example_owner"
+    repo = "example_repo"
+    repo_version = "1.0.0"
 
-    process_single_repo(owner, repo_name, access_token, output_base)
+    # Fetch dependencies from GitHub
+    dependencies = fetch_dependencies(owner, repo)
+
+    if dependencies:
+        # Generate the SBOM
+        sbom = generate_sbom(dependencies, owner, repo, repo_version)
+
+        # Save the SBOM to a file
+        output_file = f"{repo}_sbom.json"
+        save_sbom_to_file(sbom, output_file)
+    else:
+        logging.error("No dependencies data fetched. Exiting.")
 ```
 
-### Key Features of This Script:
+---
 
-1. **Dependency Fetching**: It fetches dependency information from the GitHub API using the dependency graph endpoint.
+### Key Updates
+1. **Access Token Integration:**
+   - The `ACCESS_TOKEN` is fetched from an environment variable (`GITHUB_ACCESS_TOKEN`).
+   - The token is included in the `Authorization` header for API requests.
 
-2. **Component Extraction**: The script extracts components from the `dependencies` object based on the `referenceLocator`, constructing `purl`, `bom-ref`, and `name` directly from it.
+2. **Fetching Dependencies:**
+   - The `fetch_dependencies` function calls the GitHub API to fetch the SBOM for a repository.
+   - The API endpoint is `https://api.github.com/repos/{owner}/{repo}/dependency-graph/sbom`.
 
-3. **SBOM Generation**: The `generate_sbom` function constructs the SBOM with appropriate fields including `bom-ref`, `name`, and `purl`.
+3. **Error Handling:**
+   - Handles HTTP errors and logs appropriate messages.
 
-4. **File Output**: The SBOM is saved to a specified JSON file.
+4. **Example Input:**
+   - Set the `owner` and `repo` variables for your repository.
 
-5. **Error Handling**: The script includes error handling to manage issues during API calls or file operations.
+5. **Environment Variables:**
+   - Store your access token securely as an environment variable. You can set it in your terminal:
+     ```bash
+     export GITHUB_ACCESS_TOKEN="your_access_token"
+     ```
 
-### Usage Instructions:
+---
 
-- Replace `"your-repo-name"` with the actual name of your GitHub repository.
-- Replace `"your-github-access-token"` with a valid GitHub access token that has permissions to access the repository and its dependency graph.
-- Adjust the `output_base` path as needed.
+### How to Run
+1. Ensure you have `requests` and `pytz` installed:
+   ```bash
+   pip install requests pytz
+   ```
 
-This updated script should now correctly populate the components in the SBOM based on the logic you've provided. If you encounter any further issues or have specific requirements you'd like to implement, feel free to ask!
+2. Set your GitHub access token in the environment:
+   ```bash
+   export GITHUB_ACCESS_TOKEN="your_access_token"
+   ```
+
+3. Run the script:
+   ```bash
+   python sbom_generator.py
+   ```
+
+The script dynamically fetches the dependency graph, constructs the SBOM, and saves it to a file.
