@@ -1,4 +1,6 @@
-Certainly! Here is the full script with the necessary adjustments to ensure that the package manager names are retained as they appear in the GitHub dependency graph, such as using "pip" instead of converting to "pypi":
+Certainly! Below is the complete Python script that generates a Software Bill of Materials (SBOM) for a specified GitHub repository. This version constructs the `bom-ref` and `purl` fields based on package information, ensuring that it retains the original package manager names (e.g., "pip" instead of "pypi").
+
+### Full Script
 
 ```python
 import requests
@@ -49,8 +51,6 @@ def infer_package_manager(package_name):
         return 'composer', package_name[9:]
     elif package_name.startswith('cpan/'):
         return 'cpan', package_name[5:]
-    elif package_name.startswith('pypi/'):
-        return 'pypi', package_name[5:]
     elif ':' in package_name:
         return package_name.split(':', 1)
     else:
@@ -84,13 +84,11 @@ def generate_sbom(dependencies, owner, repo, repo_version):
 
         version_info = clean_version(package.get('versionInfo', ""))
 
-        # Construct PURL
+        # Construct PURL and bom-ref using the inferred manager and name
         purl = f"pkg:{pkg_manager}/{pkg_name}@{version_info}"
+        bom_ref = purl  # Use the same value for bom-ref
 
-        # Construct bom-ref
-        bom_ref = purl
-
-        # Construct name
+        # Construct name with the package manager prefix
         name = f"{pkg_manager}:{pkg_name}"
 
         components.append({
@@ -163,12 +161,22 @@ if __name__ == "__main__":
     process_single_repo(owner, repo_name, access_token, output_base)
 ```
 
-### Key Points:
+### Key Features:
 
-- **Package Manager Detection**: The `infer_package_manager` function attempts to detect the correct package manager based on prefixes or patterns. If you see that all packages are still defaulting to `generic`, you might need to adjust this function based on how your dependency data is structured.
+1. **Dependency Fetching**: The script fetches dependency information from the GitHub API using the dependency graph endpoint.
 
-- **No Normalization**: The script does not convert `pip` to `pypi`, so it should retain whatever is detected from the dependency data.
+2. **Package Manager Inference**: The `infer_package_manager` function determines the appropriate package manager based on known prefixes.
 
-- **Fallback Handling**: If no specific pattern matches a known manager (like npm or maven), it defaults to `generic`.
+3. **SBOM Generation**: The `generate_sbom` function constructs the SBOM with appropriate fields including `bom-ref` and `purl`.
 
-Make sure that the dependency data you receive from GitHub includes recognizable patterns or prefixes that this script can use to correctly identify the package manager. Adjust the `infer_package_manager` function if your data has unique characteristics.
+4. **File Output**: The SBOM is saved to a specified JSON file.
+
+5. **Error Handling**: The script includes error handling to manage issues during API calls or file operations.
+
+### Usage Instructions:
+
+- Replace `"your-repo-name"` with the actual name of the repository you want to process.
+- Replace `"your-github-access-token"` with a valid GitHub access token that has permissions to access the repository and its dependency graph.
+- Adjust the `output_base` path as needed.
+
+This script should now generate an SBOM that aligns with your requirements and retains the correct naming conventions for package managers.
