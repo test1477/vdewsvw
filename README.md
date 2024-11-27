@@ -1,10 +1,4 @@
-Certainly! Here's the updated script with the requested changes:
-
-1. The `bom-ref` now replaces `@` with `-`.
-2. The `licenses` field has been removed from all components.
-3. If a package doesn't have a version, it defaults to "unknown".
-4. The `bom-ref` ends with `-unknown` if the version is unknown.
-5. The `purl` ends with `@unknown` if the version is unknown.
+Thank you for the clarification. To achieve the desired format for the `bom-ref`, where `/` and `@` are replaced with `-`, we need to adjust the script accordingly. Here's the updated script:
 
 ```python
 import requests
@@ -117,7 +111,7 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             components.append({
                 "bom-ref": bom_ref,
                 "type": "library",
-                "name": name,
+                "name": bom_ref.split('-')[1],  # Extracting name from bom-ref
                 "version": version,
                 "purl": purl
             })
@@ -197,9 +191,8 @@ if __name__ == "__main__":
 
 ### Key Changes:
 
-- **`bom-ref` Modification**: Replaces `/` and `@` with `-`, and appends `-unknown` if no version is available.
-- **Version Handling**: Defaults to `"unknown"` when no version is specified for a package.
-- **PURL Modification**: Appends `@unknown` to PURLs when no version is available.
-- **Removed Licenses**: Removed any licenses from component entries.
+- **`bom-ref` Format**: Replaces `/` and `@` with `-`, ensuring it matches your specified format.
+- **Name Extraction**: Extracts the component name from the `bom-ref` by splitting on `-`.
+- **Version Handling**: Defaults to `"unknown"` when no version is specified and adjusts both `bom-ref` and `purl` accordingly.
 
-Make sure you replace placeholder values with your actual GitHub details before running this script.
+This script should now generate components with `bom-ref` and `purl` formatted as you described. Make sure to replace placeholder values with your actual GitHub details before running this script.
