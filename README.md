@@ -1,4 +1,10 @@
-Certainly! Here's the full script incorporating the changes we discussed:
+Certainly! Here's the updated script with the requested changes:
+
+1. The `bom-ref` now replaces `@` with `-`.
+2. The `licenses` field has been removed from all components.
+3. If a package doesn't have a version, it defaults to "unknown".
+4. The `bom-ref` ends with `-unknown` if the version is unknown.
+5. The `purl` ends with `@unknown` if the version is unknown.
 
 ```python
 import requests
@@ -97,18 +103,23 @@ def generate_sbom(dependencies, owner, repo, repo_version):
     components = []
     for package in dependencies['sbom'].get('packages', []):
         name = package.get('name')
-        version = package.get('versionInfo')
+        version = clean_version(package.get('versionInfo')) or "unknown"
+        
         purl = next((ref['referenceLocator'] for ref in package.get('externalRefs', []) 
                      if ref.get('referenceType') == 'purl'), None)
         
-        if name and version and purl:
+        if purl:
+            bom_ref = purl.replace('/', '-').replace('@', '-')
+            if version == "unknown":
+                bom_ref += "-unknown"
+                purl += "@unknown"
+            
             components.append({
-                "bom-ref": purl,
+                "bom-ref": bom_ref,
                 "type": "library",
                 "name": name,
                 "version": version,
-                "purl": purl,
-                "licenses": [{"license": {"name": package.get('licenseConcluded')}}] if package.get('licenseConcluded') else []
+                "purl": purl
             })
 
     eastern = pytz.timezone('US/Eastern')
@@ -184,18 +195,11 @@ if __name__ == "__main__":
     process_single_repository(owner, repo_name, access_token, output_base)
 ```
 
-This script now includes the following key features:
+### Key Changes:
 
-1. It fetches dependency information for a single repository using the GitHub API.
-2. It generates a CycloneDX SBOM with components populated from the packages in the dependency data.
-3. It includes license information when available.
-4. It uses the package URL (purl) for the `bom-ref` and `purl` fields in each component.
-5. It saves the generated SBOM as a JSON file in the specified output directory.
+- **`bom-ref` Modification**: Replaces `/` and `@` with `-`, and appends `-unknown` if no version is available.
+- **Version Handling**: Defaults to `"unknown"` when no version is specified for a package.
+- **PURL Modification**: Appends `@unknown` to PURLs when no version is available.
+- **Removed Licenses**: Removed any licenses from component entries.
 
-To use this script:
-
-1. Replace the placeholder values in the `if __name__ == "__main__":` block with your actual GitHub repository details and access token.
-2. Ensure you have the required Python libraries installed (`requests`, `PyGithub`, `pytz`).
-3. Run the script to generate an SBOM for the specified repository.
-
-This script should now correctly populate the `components` array in the SBOM with the package information from the GitHub API response, similar to the sample SBOM data you provided.
+Make sure you replace placeholder values with your actual GitHub details before running this script.
