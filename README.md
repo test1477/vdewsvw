@@ -1,4 +1,6 @@
-Thank you for the clarification. To achieve the desired format for the `bom-ref`, where `/` and `@` are replaced with `-`, we need to adjust the script accordingly. Here's the updated script:
+The error you're encountering, `TypeError: expected string or bytes-like object`, occurs because the `clean_version` function is attempting to use `re.sub` on a `NoneType` object. This typically happens when `package.get('versionInfo')` returns `None`.
+
+To fix this issue, you should ensure that the input to `re.sub` is always a string. You can do this by converting the version to a string before passing it to `clean_version`. Here's how you can modify the script to handle this:
 
 ```python
 import requests
@@ -67,7 +69,7 @@ def clean_version(version):
     Returns:
         str: The cleaned version string.
     """
-    return re.sub(r'^[^0-9]*', '', version)
+    return re.sub(r'^[^0-9]*', '', str(version))
 
 def generate_sbom(dependencies, owner, repo, repo_version):
     """
@@ -111,7 +113,7 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             components.append({
                 "bom-ref": bom_ref,
                 "type": "library",
-                "name": bom_ref.split('-')[1],  # Extracting name from bom-ref
+                "name": bom_ref.split('-', 1)[1],  # Extracting name from bom-ref
                 "version": version,
                 "purl": purl
             })
@@ -191,8 +193,17 @@ if __name__ == "__main__":
 
 ### Key Changes:
 
-- **`bom-ref` Format**: Replaces `/` and `@` with `-`, ensuring it matches your specified format.
-- **Name Extraction**: Extracts the component name from the `bom-ref` by splitting on `-`.
-- **Version Handling**: Defaults to `"unknown"` when no version is specified and adjusts both `bom-ref` and `purl` accordingly.
+- **String Conversion**: Ensures that `clean_version` always receives a string by converting `versionInfo` using `str()`.
+- **Name Extraction**: Adjusted how names are extracted from `bom-ref` to ensure correct parsing when splitting on hyphens. 
 
-This script should now generate components with `bom-ref` and `purl` formatted as you described. Make sure to replace placeholder values with your actual GitHub details before running this script.
+This should resolve the error and correctly handle cases where `versionInfo` might be `None`.
+
+Citations:
+[1] https://www.statology.org/typeerror-expected-string-or-bytes-like-object/
+[2] https://github.com/langchain-ai/langchain/discussions/8665
+[3] https://www.janbasktraining.com/community/python-python/resub-erroring-with-expected-string-or-bytes-like-object
+[4] https://www.reddit.com/r/flask/comments/1ayq70z/typeerror_expected_string_or_byteslike_object/
+[5] https://discuss.python.org/t/typeerror-cannot-use-a-string-pattern-on-a-bytes-like-object/30308
+[6] https://stackoverflow.com/questions/43727583/re-sub-erroring-with-expected-string-or-bytes-like-object
+[7] https://community.letsencrypt.org/t/typeerror-expected-string-or-bytes-like-object/190199
+[8] https://github.com/CycloneDX/cdxgen
