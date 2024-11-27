@@ -1,8 +1,6 @@
-I understand the need to apply the updated exclusion logic with clarity and handle GitHub Actions components more robustly. Let me incorporate this logic directly and correctly in the script.
+Let's directly target and exclude components based on whether the `bom-ref` contains `"pkg:githubactions"`, `"pkg:github"`, or `"pkg:actions"`, regardless of their location in the `bom-ref`. Here's the updated script:
 
-Here’s an improved version using the suggested logic:
-
-### Updated Script
+### Updated Script for Excluding Components
 
 ```python
 import os
@@ -68,16 +66,14 @@ def convert_spdx_to_cyclonedx(spdx_data):
     # Convert packages
     components = []
     for package in spdx_doc.get('packages', []):
-        package_name = package.get('name')
-
-        # Get version or set to "unknown" if version is empty
+        package_name = package.get('name', 'unknown')
         version = package.get('versionInfo', 'unknown') or 'unknown'
 
-        # Exclude GitHub Actions components based on name and bom-ref
         bom_ref = package.get('SPDXID', '').lower()
-        if any(exclusion in bom_ref for exclusion in ["pkg:actions", "pkg:github actions", "pkg:github"]) or \
-           "actions:" in package_name.lower():
-            logging.info(f"Excluding GitHub Action component: {package_name}")
+
+        # Exclude GitHub Actions components based on bom-ref
+        if any(exclusion in bom_ref for exclusion in ["pkg:githubactions", "pkg:github", "pkg:actions"]):
+            logging.info(f"Excluding component with bom-ref: {bom_ref}")
             continue
 
         external_refs = package.get('externalRefs', [])
@@ -162,22 +158,21 @@ if __name__ == "__main__":
 ```
 
 ### Key Changes:
-1. **GitHub Actions Exclusion Logic:**
-   - Components with `bom-ref` containing `pkg:actions`, `pkg:github actions`, or `pkg:github` are skipped.
-   - Components with names containing `actions:` are also skipped.
+1. **Exclusion Logic:**
+   - Components are excluded if their `bom-ref` contains any of the following strings: `"pkg:githubactions"`, `"pkg:github"`, or `"pkg:actions"`.
+   - Added logging for components excluded based on this logic:
+     ```python
+     if any(exclusion in bom_ref for exclusion in ["pkg:githubactions", "pkg:github", "pkg:actions"]):
+         logging.info(f"Excluding component with bom-ref: {bom_ref}")
+         continue
+     ```
 
-   ```python
-   if any(exclusion in bom_ref for exclusion in ["pkg:actions", "pkg:github actions", "pkg:github"]) or \
-      "actions:" in package_name.lower():
-       logging.info(f"Excluding GitHub Action component: {package_name}")
-       continue
-   ```
+2. **General Improvements:**
+   - Consistent handling of empty or missing `bom-ref` fields.
+   - Logging provides better traceability for excluded components.
 
-2. **Logging:** 
-   - Added explicit logging to indicate when a GitHub Actions component is skipped.
+### Next Steps:
+1. Run the script with a repository containing GitHub Actions dependencies.
+2. Verify the excluded components do not appear in the output SBOM file.
 
-3. **General Improvements:** 
-   - Improved clarity and extensibility in exclusion handling for `bom-ref` and package name fields.
-
-### Testing the Script:
-Run the script with a repository containing GitHub Actions dependencies to verify that such components are excluded. If you encounter further issues, let me know!
+If further refinement is needed, let me know!
