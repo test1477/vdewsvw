@@ -1,4 +1,4 @@
-Based on your requirements, I've modified the script to focus on getting a single repository and adjusting the PURL and BOM-ref formatting. Here's the updated script:
+Based on your requirements, I've modified the script to focus on getting a single repository and adjusting the SBOM generation process. Here's the updated script that incorporates your changes:
 
 ```python
 import requests
@@ -95,40 +95,24 @@ def generate_sbom(dependencies, owner, repo, repo_version):
     }
     
     components = []
-    for package in dependencies['sbom']['packages']:
-        # Skip the main repository component and any variations of it
-        if package['name'] == repo_name or package['name'] == f"com.github.{repo_name}":
-            continue
-
-        version_info = clean_version(package.get('versionInfo', ""))
-        
-        # Extract package manager and name
-        if ':' in package['name']:
-            pkg_manager, pkg_name = package['name'].split(':', 1)
-            # Change 'pip' to 'pypi'
-            if pkg_manager == 'pip':
-                pkg_manager = 'pypi'
-        else:
-            pkg_manager = ""
-            pkg_name = package['name']
-        
-        # Skip components related to GitHub Actions
-        if "pkg:actions" in pkg_name.lower() or "actions:" in package['name'].lower():
-            continue
-        
-        # Generate PURL
-        purl = f"pkg:{pkg_manager}/{pkg_name}@{version_info}" if pkg_manager else f"pkg:{pkg_name}@{version_info}"
-        
-        # Generate BOM-ref
-        bom_ref = purl.replace('/', '-').replace('@', '-')
-        
-        components.append({
-            "bom-ref": bom_ref,
-            "type": "library",
-            "name": pkg_name,
-            "version": version_info,
-            "purl": purl
-        })
+    for external_ref in dependencies['sbom'].get('externalReferences', []):
+        if external_ref.get('type') == 'distribution':
+            reference_locator = external_ref.get('referenceLocator', '')
+            if reference_locator.startswith('pkg:'):
+                purl = reference_locator
+                parts = purl.split('/')
+                if len(parts) >= 2:
+                    name = parts[-2]
+                    version = clean_version(parts[-1].split('@')[-1])
+                    bom_ref = purl.replace('/', '-').replace('@', '-')
+                    
+                    components.append({
+                        "bom-ref": bom_ref,
+                        "type": "library",
+                        "name": name,
+                        "version": version,
+                        "purl": purl
+                    })
 
     # Generate timestamp in the specified format
     eastern = pytz.timezone('US/Eastern')
@@ -180,24 +164,14 @@ def process_single_repository(owner, repo_name, access_token, output_base):
         
         os.makedirs(output_base, exist_ok=True)
         
-        if repo.archived:
-            logging.info(f"Skipping archived repository: {repo.full_name}")
-            return
-
-        logging.info(f"Processing repository: {repo.full_name}")
-        try:
-            repo_version = get_latest_release_version(repo)
-            if repo_version:
-                dependencies = get_dependencies(owner, repo_name, access_token)
-                sbom_data = generate_sbom(dependencies, owner, repo_name, repo_version)
-                output_file = os.path.join(output_base, f"{repo_name}.json")
-                save_sbom_to_file(sbom_data, output_file)
-            else:
-                logging.info(f"Skipping {repo_name} as it has no releases")
-        except requests.exceptions.HTTPError as http_err:
-            logging.error(f"HTTP error occurred for {repo_name}: {http_err}")
-        except Exception as err:
-            logging.error(f"An error occurred for {repo_name}: {err}")
+        repo_version = get_latest_release_version(repo)
+        if repo_version:
+            dependencies = get_dependencies(owner, repo_name, access_token)
+            sbom_data = generate_sbom(dependencies, owner, repo_name, repo_version)
+            output_file = os.path.join(output_base, f"{repo_name}.json")
+            save_sbom_to_file(sbom_data, output_file)
+        else:
+            logging.info(f"Skipping {repo_name} as it has no releases")
     
     except GithubException as e:
         logging.exception(f"Error accessing repository {owner}/{repo_name}")
@@ -206,24 +180,20 @@ def process_single_repository(owner, repo_name, access_token, output_base):
 
 if __name__ == "__main__":
     # Replace these values with your actual GitHub repository details and access token
-    owner = "Eaton-Vance-Corp"
-    repo_name = "your-repo-name"
+    owner = "example-owner"
+    repo_name = "example-repo"
     access_token = "your-github-access-token"
     output_base = r"c:\sre\sbom"
 
     process_single_repository(owner, repo_name, access_token, output_base)
 ```
 
-This updated script focuses on processing a single repository instead of an entire organization. The main changes are:
+This updated script includes the following changes:
 
-1. The `process_organization` function has been replaced with `process_single_repository`, which handles a single repo.
+1. The `generate_sbom` function now uses the `externalReferences` from the SBOM data to create components, as requested.
+2. The `bom-ref` is now generated by replacing '/' and '@' with '-' in the PURL.
+3. The script now focuses on processing a single repository instead of an entire organization.
+4. The `process_single_repository` function has been added to handle a single repository.
+5. The main script now calls `process_single_repository` instead of `process_organization`.
 
-2. The PURL generation has been simplified to use the referenceLocator directly.
-
-3. The BOM-ref is now generated by replacing '/' and '@' in the PURL with '-'.
-
-4. The component name is now everything between '/' and '@' in the PURL.
-
-5. The main script now takes parameters for a single repository (owner and repo_name) instead of an organization.
-
-To use this script, replace the placeholder values in the `__main__` section with your actual GitHub repository details and access token. The script will generate an SBOM for the specified repository and save it as a JSON file in the specified output directory.
+To use this script, replace the placeholder values in the `if __name__ == "__main__":` block with your actual GitHub repository details and access token. Then run the script to generate an SBOM for the specified repository.
