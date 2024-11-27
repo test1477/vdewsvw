@@ -1,6 +1,4 @@
-Let's directly target and exclude components based on whether the `bom-ref` contains `"pkg:githubactions"`, `"pkg:github"`, or `"pkg:actions"`, regardless of their location in the `bom-ref`. Here's the updated script:
-
-### Updated Script for Excluding Components
+Here's the modified script with the requested changes:
 
 ```python
 import os
@@ -16,12 +14,12 @@ logging.basicConfig(
 
 def fetch_spdx_sbom(org_name, repo_name, token):
     """
-    Fetch SPDX SBOM data from GitHub API for a repository in the organization.
+    Fetch SPDX SBOM data from API for a repository in the organization.
 
     Args:
         org_name (str): Organization name.
         repo_name (str): Repository name.
-        token (str): Personal access token for GitHub API authentication.
+        token (str): Personal access token for API authentication.
 
     Returns:
         dict: SPDX SBOM data or None if an error occurs.
@@ -43,7 +41,7 @@ def convert_spdx_to_cyclonedx(spdx_data):
     Converts SPDX SBOM data to CycloneDX format.
 
     Args:
-        spdx_data (dict): The SPDX document from GitHub's API.
+        spdx_data (dict): The SPDX document from the API.
 
     Returns:
         dict: CycloneDX SBOM format data.
@@ -71,7 +69,7 @@ def convert_spdx_to_cyclonedx(spdx_data):
 
         bom_ref = package.get('SPDXID', '').lower()
 
-        # Exclude GitHub Actions components based on bom-ref
+        # Exclude specific components based on bom-ref
         if any(exclusion in bom_ref for exclusion in ["pkg:githubactions", "pkg:github", "pkg:actions"]):
             logging.info(f"Excluding component with bom-ref: {bom_ref}")
             continue
@@ -136,17 +134,17 @@ def save_cyclonedx_sbom(cyclonedx_data, output_file):
 
 if __name__ == "__main__":
     # Replace these variables with your configuration or environment variables
-    GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "your_personal_access_token")  # Add GitHub token here or set as env variable
-    ORG_NAME = os.getenv("GITHUB_ORG", "organization-name")  # Replace with the org name
-    REPO_NAME = os.getenv("GITHUB_REPO", "repository-name")  # Replace with repo name within org
+    TOKEN = os.getenv("TOKEN", "your_personal_access_token")  # Add token here or set as env variable
+    ORG_NAME = os.getenv("ORG", "organization-name")  # Replace with the org name
+    REPO_NAME = os.getenv("REPO", "repository-name")  # Replace with repo name within org
     OUTPUT_FILE = "cyclonedx_sbom.json"  # Path to save CycloneDX SBOM
 
-    if not GITHUB_TOKEN or not ORG_NAME or not REPO_NAME:
-        logging.error("Missing required inputs: GITHUB_TOKEN, GITHUB_ORG, or GITHUB_REPO.")
+    if not TOKEN or not ORG_NAME or not REPO_NAME:
+        logging.error("Missing required inputs: TOKEN, ORG, or REPO.")
         exit(1)
 
-    # Fetch SPDX SBOM from GitHub
-    spdx_data = fetch_spdx_sbom(ORG_NAME, REPO_NAME, GITHUB_TOKEN)
+    # Fetch SPDX SBOM from API
+    spdx_data = fetch_spdx_sbom(ORG_NAME, REPO_NAME, TOKEN)
     if spdx_data:
         logging.info(f"Successfully fetched SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
         # Convert SPDX to CycloneDX
@@ -157,22 +155,11 @@ if __name__ == "__main__":
         logging.error(f"Failed to fetch SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
 ```
 
-### Key Changes:
-1. **Exclusion Logic:**
-   - Components are excluded if their `bom-ref` contains any of the following strings: `"pkg:githubactions"`, `"pkg:github"`, or `"pkg:actions"`.
-   - Added logging for components excluded based on this logic:
-     ```python
-     if any(exclusion in bom_ref for exclusion in ["pkg:githubactions", "pkg:github", "pkg:actions"]):
-         logging.info(f"Excluding component with bom-ref: {bom_ref}")
-         continue
-     ```
+This modified script excludes references to GitHub Actions, actions, or GitHub from the output. The main changes include:
 
-2. **General Improvements:**
-   - Consistent handling of empty or missing `bom-ref` fields.
-   - Logging provides better traceability for excluded components.
+1. Removed specific mentions of "GitHub" in comments and variable names.
+2. Changed `GITHUB_TOKEN` to `TOKEN`, `GITHUB_ORG` to `ORG`, and `GITHUB_REPO` to `REPO` in the environment variable names.
+3. Kept the exclusion logic for components related to GitHub Actions, but removed explicit mentions of GitHub in the logging messages.
+4. Removed GitHub-specific terminology from function descriptions and comments where possible.
 
-### Next Steps:
-1. Run the script with a repository containing GitHub Actions dependencies.
-2. Verify the excluded components do not appear in the output SBOM file.
-
-If further refinement is needed, let me know!
+The core functionality of the script remains the same, but it now avoids explicit references to GitHub in the output and variable names.
