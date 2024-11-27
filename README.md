@@ -1,107 +1,90 @@
-Here's the modified script with the requested changes:
+Certainly! I'll modify the script to focus on getting a single repository and adjust the PURL and BOM reference formatting as you've described. Here's the updated script:
 
 ```python
+import requests
+import json
 import os
 import logging
-import requests
+from github import Github
+from github import GithubException
 from datetime import datetime
+import pytz
+import re
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def fetch_spdx_sbom(org_name, repo_name, token):
-    """
-    Fetch SPDX SBOM data from API for a repository in the organization.
+def get_dependencies(owner, repo, access_token):
+    logging.info(f"Fetching dependencies for repo: {owner}/{repo}")
+    url = f"https://api.github.com/repos/{owner}/{repo}/dependency-graph/sbom"
+    headers = {
+        "Authorization": f"token {access_token}",
+        "Accept": "application/vnd.github+json"
+    }
+    response = requests.get(url, headers=headers)
+    logging.info(f"GitHub API response status: {response.status_code}")
+    response.raise_for_status()
+    logging.info("Successfully fetched dependencies.")
+    return response.json()
 
-    Args:
-        org_name (str): Organization name.
-        repo_name (str): Repository name.
-        token (str): Personal access token for API authentication.
-
-    Returns:
-        dict: SPDX SBOM data or None if an error occurs.
-    """
-    api_url = f"https://api.github.com/repos/{org_name}/{repo_name}/dependency-graph/sbom"
-    headers = {"Authorization": f"Bearer {token}"}
-
+def get_latest_release_version(repo):
     try:
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching SPDX SBOM for {org_name}/{repo_name}: {e}")
+        latest_release = repo.get_latest_release()
+        version = latest_release.tag_name
+        return version[1:] if version.startswith('v') else version
+    except GithubException:
+        logging.warning(f"No releases found for {repo.full_name}")
         return None
 
+def clean_version(version):
+    return re.sub(r'^[^0-9]*', '', version)
 
-def convert_spdx_to_cyclonedx(spdx_data):
-    """
-    Converts SPDX SBOM data to CycloneDX format.
-
-    Args:
-        spdx_data (dict): The SPDX document from the API.
-
-    Returns:
-        dict: CycloneDX SBOM format data.
-    """
-    # Extract metadata
-    spdx_doc = spdx_data.get('sbom', {})
-    creation_info = spdx_doc.get('creationInfo', {})
-    timestamp = creation_info.get('created', datetime.utcnow().isoformat())
-    repo_name = spdx_doc.get('name', 'unknown-repo')
-
-    # Define CycloneDX metadata component
+def generate_sbom(dependencies, owner, repo, repo_version):
+    logging.info(f"Generating SBOM for {owner}/{repo}")
+    
+    repo_name = f"{owner}/{repo}"
+    
     metadata_component = {
-        "bom-ref": f"pkg:repository/{repo_name}@main",
+        "bom-ref": f"pkg:github/{repo_name}@{repo_version}",
         "type": "application",
         "name": repo_name,
-        "version": "main",
-        "purl": f"pkg:repository/{repo_name}@main"
+        "version": repo_version,
+        "purl": f"pkg:github/{repo_name}@{repo_version}"
     }
-
-    # Convert packages
+    
     components = []
-    for package in spdx_doc.get('packages', []):
-        package_name = package.get('name', 'unknown')
-        version = package.get('versionInfo', 'unknown') or 'unknown'
-
-        bom_ref = package.get('SPDXID', '').lower()
-
-        # Exclude specific components based on bom-ref
-        if any(exclusion in bom_ref for exclusion in ["pkg:githubactions", "pkg:github", "pkg:actions"]):
-            logging.info(f"Excluding component with bom-ref: {bom_ref}")
+    for package in dependencies['sbom']['packages']:
+        if package['name'] == repo_name or package['name'] == f"com.github.{repo_name}":
             continue
 
-        external_refs = package.get('externalRefs', [])
-        reference_locator = next(
-            (ref['referenceLocator'] for ref in external_refs if ref['referenceType'] == 'purl'), 
-            None
-        )
-
-        if not reference_locator:
-            logging.warning(f"Skipping package '{package_name}' without a referenceLocator.")
+        version_info = clean_version(package.get('versionInfo', ""))
+        package_name = package['name'].replace(':', '/')
+        
+        # Use referenceLocator as PURL
+        purl = package.get('externalReferences', [{}])[0].get('referenceLocator', '')
+        
+        # Generate bom-ref by replacing '/' and '@' with '-'
+        bom_ref = purl.replace('/', '-').replace('@', '-')
+        
+        # Extract name from PURL (between '/' and '@')
+        name_match = re.search(r'/([^/@]+)@', purl)
+        name = name_match.group(1) if name_match else package_name
+        
+        if "pkg:actions" in bom_ref.lower() or "actions:" in package['name'].lower():
             continue
-
-        # Construct the component, handling the "unknown" version case
-        if version == 'unknown':
-            bom_ref = f"pkg:{package_name.replace('/', '-')}-unknown"
-            purl = f"pkg:{reference_locator}@unknown"
-        else:
-            bom_ref = reference_locator.replace('/', '-').replace('@', '-')
-            purl = reference_locator
-
+        
         components.append({
             "bom-ref": bom_ref,
             "type": "library",
-            "name": package_name,
-            "version": version,
+            "name": name,
+            "version": version_info,
             "purl": purl
         })
 
-    # Construct CycloneDX SBOM
-    cyclonedx_sbom = {
+    eastern = pytz.timezone('US/Eastern')
+    timestamp = datetime.now(eastern).isoformat(timespec='seconds')
+
+    sbom_data = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
         "version": 1,
@@ -112,54 +95,55 @@ def convert_spdx_to_cyclonedx(spdx_data):
         "components": components
     }
 
-    return cyclonedx_sbom
+    return sbom_data
 
-
-def save_cyclonedx_sbom(cyclonedx_data, output_file):
-    """
-    Save CycloneDX SBOM data to a JSON file.
-
-    Args:
-        cyclonedx_data (dict): CycloneDX SBOM data.
-        output_file (str): File path to save the SBOM.
-    """
-    import json
+def save_sbom_to_file(sbom_data, filename):
     try:
-        with open(output_file, 'w') as file:
-            json.dump(cyclonedx_data, file, indent=2)
-        logging.info(f"Saved CycloneDX SBOM to {output_file}")
-    except IOError as e:
-        logging.error(f"Error saving CycloneDX SBOM: {e}")
+        with open(filename, 'w') as f:
+            json.dump(sbom_data, f, indent=2)
+        logging.info(f"SBOM exported successfully to {filename}")
+    except Exception as e:
+        logging.exception(f"Error saving SBOM to {filename}")
 
+def process_single_repo(owner, repo_name, access_token, output_base):
+    g = Github(access_token)
+    
+    try:
+        repo = g.get_repo(f"{owner}/{repo_name}")
+        logging.info(f"Successfully accessed repository: {owner}/{repo_name}")
+        
+        os.makedirs(output_base, exist_ok=True)
+        
+        repo_version = get_latest_release_version(repo)
+        if repo_version:
+            dependencies = get_dependencies(owner, repo_name, access_token)
+            sbom_data = generate_sbom(dependencies, owner, repo_name, repo_version)
+            output_file = os.path.join(output_base, f"{repo_name}.json")
+            save_sbom_to_file(sbom_data, output_file)
+        else:
+            logging.info(f"Skipping {repo_name} as it has no releases")
+    
+    except GithubException as e:
+        logging.exception(f"Error accessing repository {owner}/{repo_name}")
+    except Exception as e:
+        logging.exception("Error processing repository")
 
 if __name__ == "__main__":
-    # Replace these variables with your configuration or environment variables
-    TOKEN = os.getenv("TOKEN", "your_personal_access_token")  # Add token here or set as env variable
-    ORG_NAME = os.getenv("ORG", "organization-name")  # Replace with the org name
-    REPO_NAME = os.getenv("REPO", "repository-name")  # Replace with repo name within org
-    OUTPUT_FILE = "cyclonedx_sbom.json"  # Path to save CycloneDX SBOM
+    # Replace these values with your actual GitHub repository details and access token
+    owner = "example-owner"
+    repo_name = "example-repo"
+    access_token = "your-github-access-token"
+    output_base = r"c:\sre\sbom"
 
-    if not TOKEN or not ORG_NAME or not REPO_NAME:
-        logging.error("Missing required inputs: TOKEN, ORG, or REPO.")
-        exit(1)
-
-    # Fetch SPDX SBOM from API
-    spdx_data = fetch_spdx_sbom(ORG_NAME, REPO_NAME, TOKEN)
-    if spdx_data:
-        logging.info(f"Successfully fetched SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
-        # Convert SPDX to CycloneDX
-        cyclonedx_data = convert_spdx_to_cyclonedx(spdx_data)
-        # Save CycloneDX SBOM to a file
-        save_cyclonedx_sbom(cyclonedx_data, OUTPUT_FILE)
-    else:
-        logging.error(f"Failed to fetch SPDX SBOM for {ORG_NAME}/{REPO_NAME}.")
+    process_single_repo(owner, repo_name, access_token, output_base)
 ```
 
-This modified script excludes references to GitHub Actions, actions, or GitHub from the output. The main changes include:
+Key changes made:
 
-1. Removed specific mentions of "GitHub" in comments and variable names.
-2. Changed `GITHUB_TOKEN` to `TOKEN`, `GITHUB_ORG` to `ORG`, and `GITHUB_REPO` to `REPO` in the environment variable names.
-3. Kept the exclusion logic for components related to GitHub Actions, but removed explicit mentions of GitHub in the logging messages.
-4. Removed GitHub-specific terminology from function descriptions and comments where possible.
+1. Replaced `process_organization` with `process_single_repo` to focus on a single repository.
+2. Updated the PURL generation to use the `referenceLocator` from `externalReferences` when available.
+3. Modified the `bom-ref` generation to replace '/' and '@' with '-' in the PURL.
+4. Updated the component name extraction to get it from between '/' and '@' in the PURL when possible.
+5. Adjusted the main script to process a single repository instead of an entire organization.
 
-The core functionality of the script remains the same, but it now avoids explicit references to GitHub in the output and variable names.
+These changes should address your requirements for processing a single repository and updating the PURL and BOM reference formatting. The script now uses the `referenceLocator` as the PURL when available, and generates the `bom-ref` by replacing '/' and '@' with '-' in the PURL.
