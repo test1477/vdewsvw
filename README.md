@@ -71,10 +71,10 @@ def clean_version(version):
         return "unknown"
     # Remove leading non-alphanumeric characters
     version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
-    # Replace commas with dots for version ranges
-    version = version.replace(',', '.')
     # Replace spaces with underscores
     version = version.replace(' ', '_')
+    # Replace Unicode characters
+    version = version.replace('\u003e', '>').replace('\u003c', '<')
     return version
 
 def generate_sbom(dependencies, owner, repo, repo_version):
@@ -118,7 +118,7 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             version = clean_version(package.get('versionInfo'))
             
             # Construct bom-ref and purl with version
-            bom_ref = f"{purl}-{version}".replace('/', '-').replace('@', '-')
+            bom_ref = f"{purl}-{version}".replace('/', '-').replace('@', '-').replace(',', '.')
             purl_with_version = f"{purl}@{version}"
             
             components.append({
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     process_single_repository(owner, repo_name, access_token, output_base)
 ```
 
-This script includes all the modifications we've discussed:
+This script now includes all the modifications we've discussed:
 
 1. It fetches dependencies for a single GitHub repository.
 2. It generates a CycloneDX SBOM with components populated from the packages in the dependency data.
@@ -210,7 +210,9 @@ This script includes all the modifications we've discussed:
 4. It handles version ranges and special characters in version strings.
 5. It includes the version in both the `bom-ref` and `purl` fields for each component.
 6. It uses the package name directly from the `name` field.
-7. It saves the generated SBOM as a JSON file in the specified output directory.
+7. It preserves commas in the `version` field but replaces them with dots in the `bom-ref` field.
+8. It handles Unicode characters in version strings.
+9. It saves the generated SBOM as a JSON file in the specified output directory.
 
 To use this script:
 
@@ -218,4 +220,4 @@ To use this script:
 2. Ensure you have the required Python libraries installed (`requests`, `PyGithub`, `pytz`).
 3. Run the script to generate an SBOM for the specified repository.
 
-This script should now correctly handle various version formats and include them in the `bom-ref` and `purl` fields as requested.
+This script should now correctly handle various version formats, including ranges, and format them appropriately in both the `bom-ref` and `version` fields as requested.
