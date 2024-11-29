@@ -1,4 +1,4 @@
-Certainly! Here's the full updated script incorporating all the changes we've discussed, including the latest modifications to the `generate_sbom` function:
+Certainly! Here's the full updated script incorporating all the changes we've discussed, including the latest modification to the `generate_sbom` function to correctly format the `bom-ref`:
 
 ```python
 import requests
@@ -119,8 +119,11 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             
             # Construct bom-ref and purl with version
             pkg_parts = purl.split('/', 2)
-            if len(pkg_parts) == 3:
-                bom_ref = f"{pkg_parts[0]}-{pkg_parts[1]}/{pkg_parts[2]}-{version}"
+            if len(pkg_parts) >= 2:
+                bom_ref = f"{pkg_parts[0]}-{pkg_parts[1]}"
+                if len(pkg_parts) == 3:
+                    bom_ref += f"/{pkg_parts[2]}"
+                bom_ref += f"-{version}"
             else:
                 bom_ref = f"{purl}-{version}"
             bom_ref = bom_ref.replace('@', '-')
@@ -219,6 +222,8 @@ This script now includes all the modifications we've discussed, including:
 8. Formatting the `bom-ref` as requested, only replacing the first '/' after 'pkg:' with a '-'.
 9. Handling Unicode characters in version strings.
 10. Saving the generated SBOM as a JSON file in the specified output directory.
+
+The key change in this version is the `bom-ref` construction in the `generate_sbom` function, which now correctly formats the `bom-ref` as specified, replacing only the first '/' after 'pkg:' with a '-'.
 
 To use this script:
 
