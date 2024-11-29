@@ -1,4 +1,4 @@
-Certainly! Here's the full script with proper comments and the requested modifications to exclude GitHub Actions components:
+Certainly! Here's the full updated script incorporating all the changes we've discussed:
 
 ```python
 import requests
@@ -59,7 +59,7 @@ def get_latest_release_version(repo):
 
 def clean_version(version):
     """
-    Cleans the version string by removing any prefixes like '^', '~', etc.
+    Cleans the version string by removing any prefixes and handling version ranges.
 
     Args:
         version (str): The version string to clean.
@@ -67,7 +67,15 @@ def clean_version(version):
     Returns:
         str: The cleaned version string.
     """
-    return re.sub(r'^[^0-9]*', '', str(version))
+    if not version:
+        return "unknown"
+    # Remove leading non-alphanumeric characters
+    version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
+    # Replace commas with dots for version ranges
+    version = version.replace(',', '.')
+    # Replace spaces with underscores
+    version = version.replace(' ', '_')
+    return version
 
 def generate_sbom(dependencies, owner, repo, repo_version):
     """
@@ -106,18 +114,19 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             continue
         
         if purl:
-            version = clean_version(package.get('versionInfo')) or "unknown"
-            bom_ref = purl.replace('/', '-').replace('@', '-')
-            if version == "unknown":
-                bom_ref += "-unknown"
-                purl += "@unknown"
+            name = package.get('name')
+            version = clean_version(package.get('versionInfo'))
+            
+            # Construct bom-ref and purl with version
+            bom_ref = f"{purl}-{version}".replace('/', '-').replace('@', '-')
+            purl_with_version = f"{purl}@{version}"
             
             components.append({
                 "bom-ref": bom_ref,
                 "type": "library",
-                "name": bom_ref.split('-', 2)[-1],  # Extracting name from bom-ref
+                "name": name,
                 "version": version,
-                "purl": purl
+                "purl": purl_with_version
             })
 
     eastern = pytz.timezone('US/Eastern')
@@ -193,11 +202,20 @@ if __name__ == "__main__":
     process_single_repository(owner, repo_name, access_token, output_base)
 ```
 
-This script now includes:
+This script includes all the modifications we've discussed:
 
-1. Proper comments for each function explaining their purpose and parameters.
-2. A modification in the `generate_sbom` function to exclude components with PURLs starting with "pkg:github", "pkg:githubactions", or "pkg:actions".
-3. Improved error handling and logging throughout the script.
-4. A clean structure that separates concerns into different functions for better readability and maintainability.
+1. It fetches dependencies for a single GitHub repository.
+2. It generates a CycloneDX SBOM with components populated from the packages in the dependency data.
+3. It excludes GitHub Actions components (those starting with pkg:github, pkg:githubactions, or pkg:actions).
+4. It handles version ranges and special characters in version strings.
+5. It includes the version in both the `bom-ref` and `purl` fields for each component.
+6. It uses the package name directly from the `name` field.
+7. It saves the generated SBOM as a JSON file in the specified output directory.
 
-To use this script, replace the placeholder values in the `if __name__ == "__main__":` block with your actual GitHub repository details and access token. Then run the script to generate an SBOM for the specified repository, excluding GitHub Actions components.
+To use this script:
+
+1. Replace the placeholder values in the `if __name__ == "__main__":` block with your actual GitHub repository details and access token.
+2. Ensure you have the required Python libraries installed (`requests`, `PyGithub`, `pytz`).
+3. Run the script to generate an SBOM for the specified repository.
+
+This script should now correctly handle various version formats and include them in the `bom-ref` and `purl` fields as requested.
