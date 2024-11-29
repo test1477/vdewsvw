@@ -1,4 +1,4 @@
-Certainly! Here's the full updated script incorporating all the changes we've discussed, including the latest modification to the `generate_sbom` function to correctly format the `bom-ref`:
+Certainly! Here's the full updated script incorporating all the changes we've discussed, including the latest modification to the `clean_version` function to correctly handle Unicode escape sequences:
 
 ```python
 import requests
@@ -69,12 +69,12 @@ def clean_version(version):
     """
     if not version:
         return "unknown"
+    # Decode Unicode escape sequences
+    version = version.encode('utf-8').decode('unicode_escape')
     # Remove leading non-alphanumeric characters
     version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
     # Replace spaces with underscores
     version = version.replace(' ', '_')
-    # Replace Unicode characters
-    version = version.replace('\u003e', '>').replace('\u003c', '<')
     return version
 
 def generate_sbom(dependencies, owner, repo, repo_version):
@@ -215,15 +215,14 @@ This script now includes all the modifications we've discussed, including:
 1. Fetching dependencies for a single GitHub repository.
 2. Generating a CycloneDX SBOM with components populated from the packages in the dependency data.
 3. Excluding GitHub Actions components.
-4. Handling version ranges and special characters in version strings.
+4. Handling version ranges and special characters in version strings, including proper decoding of Unicode escape sequences.
 5. Including the version in both the `bom-ref` and `purl` fields for each component.
 6. Using the package name directly from the `name` field.
 7. Preserving commas in version strings for both `bom-ref` and `purl`.
 8. Formatting the `bom-ref` as requested, only replacing the first '/' after 'pkg:' with a '-'.
-9. Handling Unicode characters in version strings.
-10. Saving the generated SBOM as a JSON file in the specified output directory.
+9. Saving the generated SBOM as a JSON file in the specified output directory.
 
-The key change in this version is the `bom-ref` construction in the `generate_sbom` function, which now correctly formats the `bom-ref` as specified, replacing only the first '/' after 'pkg:' with a '-'.
+The key change in this version is the `clean_version` function, which now correctly handles Unicode escape sequences, ensuring that version ranges like "> 9,< 10" are properly displayed.
 
 To use this script:
 
@@ -231,4 +230,4 @@ To use this script:
 2. Ensure you have the required Python libraries installed (`requests`, `PyGithub`, `pytz`).
 3. Run the script to generate an SBOM for the specified repository.
 
-This script should now correctly handle various version formats, including ranges, and format them appropriately in both the `bom-ref` and `version` fields as requested.
+This script should now correctly handle various version formats, including ranges with Unicode characters, and format them appropriately in both the `bom-ref` and `version` fields as requested.
