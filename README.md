@@ -1,4 +1,4 @@
-Certainly! I understand you want the version to appear as "9,< 10" with a space after the comma and before the "<" symbol. Let's modify the `clean_version` function to achieve this specific format. Here's the updated full script with this change:
+Certainly! Here's the full updated script incorporating all the changes we've discussed, including the fix for the version duplication issue:
 
 ```python
 import requests
@@ -68,16 +68,27 @@ def generate_sbom(dependencies, owner, repo, repo_version):
             name = package.get('name')
             version = clean_version(package.get('versionInfo'))
             
-            pkg_parts = purl.split('/', 2)
+            # Check if version is already in purl
+            if '@' in purl:
+                purl_parts = purl.split('@')
+                purl_without_version = purl_parts[0]
+                version = purl_parts[1]  # Use version from purl
+                purl_with_version = purl  # Use original purl
+            else:
+                purl_without_version = purl
+                purl_with_version = f"{purl}@{version}"
+            
+            # Construct bom-ref
+            pkg_parts = purl_without_version.split('/', 2)
             if len(pkg_parts) >= 2:
                 bom_ref = f"{pkg_parts[0]}-{pkg_parts[1]}"
                 if len(pkg_parts) == 3:
                     bom_ref += f"/{pkg_parts[2]}"
                 bom_ref += f"-{version}"
             else:
-                bom_ref = f"{purl}-{version}"
+                bom_ref = f"{purl_without_version}-{version}"
+            
             bom_ref = bom_ref.replace('@', '-')
-            purl_with_version = f"{purl}@{version}"
             
             components.append({
                 "bom-ref": bom_ref,
@@ -143,17 +154,23 @@ if __name__ == "__main__":
     process_single_repository(owner, repo_name, access_token, output_base)
 ```
 
-The key change is in the `clean_version` function:
+This script now includes all the modifications we've discussed, including:
 
-```python
-def clean_version(version):
-    if not version:
-        return "unknown"
-    version = version.encode('utf-8').decode('unicode_escape')
-    version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
-    # Add space after comma and before < or > if not present
-    version = re.sub(r',\s*([<>])', r', \1', version)
-    return version
-```
+1. Fetching dependencies for a single GitHub repository.
+2. Generating a CycloneDX SBOM with components populated from the packages in the dependency data.
+3. Excluding GitHub Actions components.
+4. Handling version ranges and special characters in version strings.
+5. Including the version in both the `bom-ref` and `purl` fields for each component.
+6. Using the package name directly from the `name` field.
+7. Preserving commas and adding spaces in version strings as requested.
+8. Formatting the `bom-ref` as requested, only replacing the first '/' after 'pkg:' with a '-'.
+9. Preventing duplication of versions in both the `purl` and `bom-ref` fields.
+10. Saving the generated SBOM as a JSON file in the specified output directory.
 
-This modification ensures that there's a space after each comma and before any "<" or ">" symbol in the version string. This should result in versions appearing as "9,< 10" as you requested.
+To use this script:
+
+1. Replace the placeholder values in the `if __name__ == "__main__":` block with your actual GitHub repository details and access token.
+2. Ensure you have the required Python libraries installed (`requests`, `PyGithub`, `pytz`).
+3. Run the script to generate an SBOM for the specified repository.
+
+This script should now correctly handle various version formats, including ranges with proper spacing, and avoid duplicating versions in the `purl` and `bom-ref` fields.
