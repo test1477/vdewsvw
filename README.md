@@ -1,4 +1,4 @@
-Certainly! Here's the full updated script incorporating all the changes we've discussed, including the latest modifications to ensure valid URIs in the PURL and BOM-Ref fields:
+I apologize for the confusion. You're right, we should preserve the full version number if it's available, not just the first number. Let's update the script to handle this correctly. Here's the full updated script that will keep the complete version number like "9.0.7" in both the bom-ref and purl fields:
 
 ```python
 import requests
@@ -40,15 +40,14 @@ def clean_version(version):
         return "unknown"
     version = version.encode('utf-8').decode('unicode_escape')
     version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
-    # Add space after comma and before < or > if not present
-    version = re.sub(r',\s*([<>])', r', \1', version)
     return version
 
 def clean_version_for_uri(version):
-    version = version.replace(',', '.')
-    version = version.replace(' ', '')
-    version = version.replace('<', '').replace('>', '')
-    return version
+    # Remove any non-alphanumeric characters except dots
+    clean_version = re.sub(r'[^a-zA-Z0-9.]', '', version)
+    # If the version starts with a comparison operator, remove it
+    clean_version = re.sub(r'^[<>=~^]+', '', clean_version)
+    return clean_version if clean_version else "unknown"
 
 def generate_sbom(dependencies, owner, repo, repo_version):
     logging.info(f"Generating SBOM for {owner}/{repo}")
@@ -159,24 +158,28 @@ if __name__ == "__main__":
     process_single_repository(owner, repo_name, access_token, output_base)
 ```
 
-This script now includes all the modifications we've discussed, including:
+The key changes in this script are:
 
-1. Fetching dependencies for a single GitHub repository.
-2. Generating a CycloneDX SBOM with components populated from the packages in the dependency data.
-3. Excluding GitHub Actions components.
-4. Handling version ranges and special characters in version strings.
-5. Including the version in both the `bom-ref` and `purl` fields for each component.
-6. Using the package name directly from the `name` field.
-7. Preserving the original version string in the `version` field.
-8. Cleaning the version string for use in URIs (PURL and BOM-Ref).
-9. Formatting the `bom-ref` as requested, only replacing the first '/' after 'pkg:' with a '-'.
-10. Ensuring that both PURL and BOM-Ref contain valid URIs without invalid characters.
-11. Saving the generated SBOM as a JSON file in the specified output directory.
+1. The `clean_version_for_uri` function now preserves the full version number, only removing non-alphanumeric characters (except dots) and leading comparison operators:
 
-To use this script:
+```python
+def clean_version_for_uri(version):
+    # Remove any non-alphanumeric characters except dots
+    clean_version = re.sub(r'[^a-zA-Z0-9.]', '', version)
+    # If the version starts with a comparison operator, remove it
+    clean_version = re.sub(r'^[<>=~^]+', '', clean_version)
+    return clean_version if clean_version else "unknown"
+```
 
-1. Replace the placeholder values in the `if __name__ == "__main__":` block with your actual GitHub repository details and access token.
-2. Ensure you have the required Python libraries installed (`requests`, `PyGithub`, `pytz`).
-3. Run the script to generate an SBOM for the specified repository.
+2. The `clean_version` function now only removes leading non-alphanumeric characters, preserving the rest of the version string:
 
-This script should now correctly handle various version formats, clean them for use in URIs, and maintain the original version string in the `version` field.
+```python
+def clean_version(version):
+    if not version:
+        return "unknown"
+    version = version.encode('utf-8').decode('unicode_escape')
+    version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
+    return version
+```
+
+These changes ensure that version numbers like "9.0.7" will be preserved in both the bom-ref and purl fields, while still cleaning up any invalid characters or comparison operators. The original version string (including any comparison operators) will be kept in the "version" field.
