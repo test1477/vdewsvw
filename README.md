@@ -1,4 +1,4 @@
-Certainly! Here's the full updated script incorporating all the changes we've discussed, including the fix for the version duplication issue:
+Certainly! Here's the full updated script incorporating all the changes we've discussed, including the latest modifications to ensure valid URIs in the PURL and BOM-Ref fields:
 
 ```python
 import requests
@@ -44,6 +44,12 @@ def clean_version(version):
     version = re.sub(r',\s*([<>])', r', \1', version)
     return version
 
+def clean_version_for_uri(version):
+    version = version.replace(',', '.')
+    version = version.replace(' ', '')
+    version = version.replace('<', '').replace('>', '')
+    return version
+
 def generate_sbom(dependencies, owner, repo, repo_version):
     logging.info(f"Generating SBOM for {owner}/{repo}")
     
@@ -67,26 +73,25 @@ def generate_sbom(dependencies, owner, repo, repo_version):
                          purl.startswith('pkg:actions')):
             name = package.get('name')
             version = clean_version(package.get('versionInfo'))
+            clean_uri_version = clean_version_for_uri(version)
             
-            # Check if version is already in purl
+            # Update PURL
             if '@' in purl:
                 purl_parts = purl.split('@')
                 purl_without_version = purl_parts[0]
-                version = purl_parts[1]  # Use version from purl
-                purl_with_version = purl  # Use original purl
+                purl_with_version = f"{purl_without_version}@{clean_uri_version}"
             else:
-                purl_without_version = purl
-                purl_with_version = f"{purl}@{version}"
+                purl_with_version = f"{purl}@{clean_uri_version}"
             
-            # Construct bom-ref
-            pkg_parts = purl_without_version.split('/', 2)
+            # Construct BOM-Ref
+            pkg_parts = purl.split('/', 2)
             if len(pkg_parts) >= 2:
                 bom_ref = f"{pkg_parts[0]}-{pkg_parts[1]}"
                 if len(pkg_parts) == 3:
                     bom_ref += f"/{pkg_parts[2]}"
-                bom_ref += f"-{version}"
+                bom_ref += f"-{clean_uri_version}"
             else:
-                bom_ref = f"{purl_without_version}-{version}"
+                bom_ref = f"{purl}-{clean_uri_version}"
             
             bom_ref = bom_ref.replace('@', '-')
             
@@ -162,10 +167,11 @@ This script now includes all the modifications we've discussed, including:
 4. Handling version ranges and special characters in version strings.
 5. Including the version in both the `bom-ref` and `purl` fields for each component.
 6. Using the package name directly from the `name` field.
-7. Preserving commas and adding spaces in version strings as requested.
-8. Formatting the `bom-ref` as requested, only replacing the first '/' after 'pkg:' with a '-'.
-9. Preventing duplication of versions in both the `purl` and `bom-ref` fields.
-10. Saving the generated SBOM as a JSON file in the specified output directory.
+7. Preserving the original version string in the `version` field.
+8. Cleaning the version string for use in URIs (PURL and BOM-Ref).
+9. Formatting the `bom-ref` as requested, only replacing the first '/' after 'pkg:' with a '-'.
+10. Ensuring that both PURL and BOM-Ref contain valid URIs without invalid characters.
+11. Saving the generated SBOM as a JSON file in the specified output directory.
 
 To use this script:
 
@@ -173,4 +179,4 @@ To use this script:
 2. Ensure you have the required Python libraries installed (`requests`, `PyGithub`, `pytz`).
 3. Run the script to generate an SBOM for the specified repository.
 
-This script should now correctly handle various version formats, including ranges with proper spacing, and avoid duplicating versions in the `purl` and `bom-ref` fields.
+This script should now correctly handle various version formats, clean them for use in URIs, and maintain the original version string in the `version` field.
