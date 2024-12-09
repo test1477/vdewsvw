@@ -1,4 +1,4 @@
-I apologize for the confusion. You're right, we should preserve the full version number if it's available, not just the first number. Let's update the script to handle this correctly. Here's the full updated script that will keep the complete version number like "9.0.7" in both the bom-ref and purl fields:
+Certainly! Here's the full updated script incorporating all the changes we've discussed, including the latest modification to the `clean_version()` function:
 
 ```python
 import requests
@@ -38,16 +38,13 @@ def get_latest_release_version(repo):
 def clean_version(version):
     if not version:
         return "unknown"
-    version = version.encode('utf-8').decode('unicode_escape')
-    version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
-    return version
-
-def clean_version_for_uri(version):
-    # Remove any non-alphanumeric characters except dots
-    clean_version = re.sub(r'[^a-zA-Z0-9.]', '', version)
-    # If the version starts with a comparison operator, remove it
-    clean_version = re.sub(r'^[<>=~^]+', '', clean_version)
-    return clean_version if clean_version else "unknown"
+    # Remove leading special characters and comparison operators
+    clean_version = re.sub(r'^[^0-9]+', '', version)
+    # Extract the first numeric part (major version)
+    match = re.search(r'\d+', clean_version)
+    if match:
+        return match.group(0)
+    return "unknown"
 
 def generate_sbom(dependencies, owner, repo, repo_version):
     logging.info(f"Generating SBOM for {owner}/{repo}")
@@ -71,8 +68,8 @@ def generate_sbom(dependencies, owner, repo, repo_version):
                          purl.startswith('pkg:githubactions') or 
                          purl.startswith('pkg:actions')):
             name = package.get('name')
-            version = clean_version(package.get('versionInfo'))
-            clean_uri_version = clean_version_for_uri(version)
+            version = package.get('versionInfo')
+            clean_uri_version = clean_version(version)
             
             # Update PURL
             if '@' in purl:
@@ -158,28 +155,9 @@ if __name__ == "__main__":
     process_single_repository(owner, repo_name, access_token, output_base)
 ```
 
-The key changes in this script are:
+This script now includes the following key changes:
 
-1. The `clean_version_for_uri` function now preserves the full version number, only removing non-alphanumeric characters (except dots) and leading comparison operators:
+1. The `clean_version()` function has been updated to remove leading special characters and comparison operators, and extract only the first numeric part of the version string.
+2. In the `generate_sbom()` function, we now use the original `versionInfo` for the "version" field, while using the cleaned version for `bom-ref` and `purl` fields.
 
-```python
-def clean_version_for_uri(version):
-    # Remove any non-alphanumeric characters except dots
-    clean_version = re.sub(r'[^a-zA-Z0-9.]', '', version)
-    # If the version starts with a comparison operator, remove it
-    clean_version = re.sub(r'^[<>=~^]+', '', clean_version)
-    return clean_version if clean_version else "unknown"
-```
-
-2. The `clean_version` function now only removes leading non-alphanumeric characters, preserving the rest of the version string:
-
-```python
-def clean_version(version):
-    if not version:
-        return "unknown"
-    version = version.encode('utf-8').decode('unicode_escape')
-    version = re.sub(r'^[^a-zA-Z0-9]+', '', version)
-    return version
-```
-
-These changes ensure that version numbers like "9.0.7" will be preserved in both the bom-ref and purl fields, while still cleaning up any invalid characters or comparison operators. The original version string (including any comparison operators) will be kept in the "version" field.
+These modifications should correctly handle version strings with special characters, simplifying them for the `bom-ref` and `purl` fields while preserving the original version information in the "version" field.
